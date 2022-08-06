@@ -118,10 +118,8 @@ def magic_ball(msg: telebot.types.Message, current):
         save()
     elif msg.text is not None:
         ai_datas[index]["instances"][0]["contexts"][0].append(msg.text)
-        print(ai_datas[index])
         res = requests.post(
             'https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict', json=ai_datas[index]).json()
-        print(res)
         answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
         bot.send_message(msg.chat.id, answer)
         ai_datas[index]["instances"][0]["contexts"][0].append(answer)
