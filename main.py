@@ -1,7 +1,9 @@
-import random
 import configparser
-import telebot
 import json
+import random
+
+import requests
+import telebot
 
 content_types = ["text", "audio", "document", "photo", "sticker", "video", "video_note", "voice", "location", "contact",
                  "new_chat_title", "group_chat_created", "supergroup_chat_created", "channel_chat_created",
@@ -36,6 +38,7 @@ def save():
     config.set('Dump', 'chat_msg_my', json.dumps(chat_msg_my))
     config.set('Dump', 'chat_msg_pen', json.dumps(chat_msg_pen))
     config.set('Dump', 'current_users', json.dumps(current_users))
+    config.set('Dump', 'ai_datas', json.dumps(ai_datas))
     with open('config.ini', 'w', encoding="utf-8") as f:
         config.write(f)
 
@@ -48,20 +51,21 @@ ignore = json.loads(config["Settings"]['ignore'])
 ans = json.loads(config["Settings"]['ans'])
 ans_voice = json.loads(config["Settings"]['ans_voice'])
 images: dict = json.loads(config["Settings"]['images'])
-starts = json.loads(config["Settings"]['starts'])
+# starts = json.loads(config["Settings"]['starts'])
 calls = json.loads(config["Settings"]['calls'])
+calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
 randoms = json.loads(config["Settings"]['randoms'])
-
 current_chat = config["Dump"]['current_chat']
 current_user = config["Dump"]['current_user']
-active_chats = json.loads(config["Dump"]['active_chats'])
+active_chats: list = json.loads(config["Dump"]['active_chats'])
 wait_for_chat_id = json.loads(config["Dump"]['wait_for_chat_id'])
 chat_id_my = json.loads(config["Dump"]['chat_id_my'])
 chat_id_pen = json.loads(config["Dump"]['chat_id_pen'])
 chat_msg_my = json.loads(config["Dump"]['chat_msg_my'])
 chat_msg_pen = json.loads(config["Dump"]['chat_msg_pen'])
 current_users = json.loads(config["Dump"]['current_users'])
+ai_datas = json.loads(config["Dump"]['ai_datas'])
 
 
 def get_id(message):
@@ -103,6 +107,29 @@ def start_chat(chat_id, chat):
         save()
     except telebot.apihelper.ApiTelegramException:
         bot.send_message(chat_id, "Неправильный chat_id")
+
+
+def magic_ball(msg: telebot.types.Message, current):
+    index = active_chats.index(str(msg.chat.id))
+    if any(s in current for s in ends):
+        active_chats.pop(index)
+        ai_datas.pop(index)
+        bot.send_message(msg.chat.id, "Пока")
+        save()
+    elif msg.text is not None:
+        ai_datas[index]["instances"][0]["contexts"][0].append(msg.text)
+        print(ai_datas[index])
+        res = requests.post(
+            'https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict', json=ai_datas[index]).json()
+        print(res)
+        answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
+        bot.send_message(msg.chat.id, answer)
+        ai_datas[index]["instances"][0]["contexts"][0].append(answer)
+        save()
+        # if msg.content_type == "voice":
+        #     bot.send_voice(msg.chat.id, random.choice(ans_voice))
+        # else:
+        #     bot.send_message(msg.chat.id, random.choice(ans))
 
 
 def todict(obj):
@@ -341,22 +368,17 @@ def chatting(msg: telebot.types.Message):
                 start_num, end_num = end_num, start_num
             bot.send_message(msg.chat.id,
                              f"Случайное число от {start_num} до {end_num}: {random.randint(start_num, end_num)}")
+            return
         # magic ball
-        elif str(msg.chat.id) in active_chats:
-            if any(s in current for s in ends):
-                active_chats.remove(str(msg.chat.id))
-                bot.send_message(msg.chat.id, "Пока")
+        try:
+            magic_ball(msg, current)
+        except ValueError:
+            if any(s in current for s in calls) or (
+                    msg.chat.type == "private" and any(s in current for s in calls_private)):
+                active_chats.append(str(msg.chat.id))
+                ai_datas.append({"instances": [{"contexts": [[]]}]})
+                magic_ball(msg, current)
                 save()
-            else:
-                if msg.content_type == "voice":
-                    bot.send_voice(msg.chat.id, random.choice(ans_voice))
-                else:
-                    bot.send_message(msg.chat.id, random.choice(ans))
-        elif any(s in current for s in calls) or current.startswith(
-                "/start"):
-            active_chats.append(str(msg.chat.id))
-            bot.send_message(msg.chat.id, random.choice(starts))
-            save()
 
 
 @bot.callback_query_handler(func=lambda call: 'btn' in call.data)
