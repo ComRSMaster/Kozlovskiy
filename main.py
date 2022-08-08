@@ -5,6 +5,8 @@ import random
 import requests
 import telebot
 
+from webserver import keep_alive
+
 content_types = ["text", "audio", "document", "photo", "sticker", "video", "video_note", "voice", "location", "contact",
                  "new_chat_title", "group_chat_created", "supergroup_chat_created", "channel_chat_created",
                  "migrate_to_chat_id", "poll"]
@@ -32,15 +34,17 @@ def save():
     config.set('Dump', 'current_chat', current_chat)
     config.set('Dump', 'current_user', current_user)
     config.set('Dump', 'active_chats', json.dumps(active_chats))
+    config.set('Dump', 'active_goroda', json.dumps(active_goroda))
+    config.set('Dump', 'current_letters', json.dumps(current_letters, ensure_ascii=False))
     config.set('Dump', 'wait_for_chat_id', json.dumps(wait_for_chat_id))
     config.set('Dump', 'chat_id_my', json.dumps(chat_id_my))
     config.set('Dump', 'chat_id_pen', json.dumps(chat_id_pen))
     config.set('Dump', 'chat_msg_my', json.dumps(chat_msg_my))
     config.set('Dump', 'chat_msg_pen', json.dumps(chat_msg_pen))
     config.set('Dump', 'current_users', json.dumps(current_users))
-    config.set('Dump', 'ai_datas', json.dumps(ai_datas))
-    with open('config.ini', 'w', encoding="utf-8") as f:
-        config.write(f)
+    config.set('Dump', 'ai_datas', json.dumps(ai_datas, ensure_ascii=False))
+    with open('config.ini', 'w', encoding="utf-8") as file:
+        config.write(file)
 
 
 groups = []
@@ -59,6 +63,8 @@ randoms = json.loads(config["Settings"]['randoms'])
 current_chat = config["Dump"]['current_chat']
 current_user = config["Dump"]['current_user']
 active_chats: list = json.loads(config["Dump"]['active_chats'])
+active_goroda: list = json.loads(config["Dump"]['active_goroda'])
+current_letters = json.loads(config["Dump"]['current_letters'])
 wait_for_chat_id = json.loads(config["Dump"]['wait_for_chat_id'])
 chat_id_my = json.loads(config["Dump"]['chat_id_my'])
 chat_id_pen = json.loads(config["Dump"]['chat_id_pen'])
@@ -66,6 +72,9 @@ chat_msg_my = json.loads(config["Dump"]['chat_msg_my'])
 chat_msg_pen = json.loads(config["Dump"]['chat_msg_pen'])
 current_users = json.loads(config["Dump"]['current_users'])
 ai_datas = json.loads(config["Dump"]['ai_datas'])
+
+with open('cities.json', encoding="utf-8") as f:
+    goroda = json.loads(f.read())
 
 
 def get_id(message):
@@ -109,15 +118,17 @@ def start_chat(chat_id, chat):
         bot.send_message(chat_id, "Неправильный chat_id")
 
 
-def magic_ball(msg: telebot.types.Message, current):
+def magic_ball(msg: telebot.types.Message, args):
     index = active_chats.index(str(msg.chat.id))
-    if any(s in current for s in ends):
+    if any(s in args for s in ends):
         active_chats.pop(index)
         ai_datas.pop(index)
         bot.send_message(msg.chat.id, "Пока")
         save()
-    elif msg.text is not None:
-        ai_datas[index]["instances"][0]["contexts"][0].append(msg.text)
+        return
+    message = n(msg.text) + n(msg.caption)
+    if message != "":
+        ai_datas[index]["instances"][0]["contexts"][0].append(message)
         res = requests.post(
             'https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict', json=ai_datas[index]).json()
         answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
@@ -164,7 +175,7 @@ def chatting(msg: telebot.types.Message):
     global current_user
 
     current = str(msg.text).lower()
-    args = current.split(" ")[1:]
+    args = current.split(" ")
     # group management
     if msg.chat.type != "private":
         new_group = False
@@ -315,14 +326,14 @@ def chatting(msg: telebot.types.Message):
 
     # chat228
     elif current.startswith("/chat"):
-        if len(args) == 0:
+        if len(args) == 1:
             bot.send_message(msg.chat.id,
                              "Использование: /chat chat_id \n"
                              "chat_id - id чата, с которым ты будешь общаться от имени Козловского. \n"
                              "/id - получить chat_id человека. \n"
                              "/groups - получить chat_id группы.")
             return
-        start_chat(str(msg.chat.id), args[0])
+        start_chat(str(msg.chat.id), args[1])
     else:
         try:
             my_index = chat_id_my.index(str(msg.chat.id))  # мы
@@ -349,7 +360,7 @@ def chatting(msg: telebot.types.Message):
     # fun
     if str(msg.chat.id) not in chat_id_my and str(msg.chat.id) not in wait_for_chat_id:
         # random
-        if any(s in current for s in randoms) or current.startswith("/random"):
+        if any(s in args for s in randoms):
             start_num = 1
             end_num = 6
             try:
@@ -367,15 +378,45 @@ def chatting(msg: telebot.types.Message):
             bot.send_message(msg.chat.id,
                              f"Случайное число от {start_num} до {end_num}: {random.randint(start_num, end_num)}")
             return
-        # magic ball
+        # goroda game
         try:
-            magic_ball(msg, current)
+            index = active_goroda.index(str(msg.chat.id))
+            if any(s in args for s in ends):
+                active_goroda.pop(index)
+                current_letters.pop(index)
+                bot.send_message(msg.chat.id, "*Конец игры*", "Markdown")
+                save()
+                return
+            city = n(current) + n(msg.caption)
+            if city != "":
+                if city[0] == current_letters[index] or current_letters[index] == "":
+                    random_city = random.choice(goroda[city[-1]])
+                    bot.send_message(msg.chat.id, random_city)
+                    if random_city[-1] in ["ъ", "ы", "ь", "й"]:
+                        current_letters[index] = random_city[-2]
+                    else:
+                        current_letters[index] = random_city[-1]
+                    save()
+                else:
+                    bot.send_message(msg.chat.id,
+                                     f"*Слово должно начинаться на букву:*  _{current_letters[index].upper()}_",
+                                     "Markdown")
+                return
         except ValueError:
-            if any(s in current for s in calls) or (
-                    msg.chat.type == "private" and any(s in current for s in calls_private)):
+            if "в города" in current:
+                active_goroda.append(str(msg.chat.id))
+                current_letters.append("")
+                bot.send_message(msg.chat.id, "*Вы начали игру в города.*\n_Начинайте первым!_", "Markdown")
+                save()
+        # ai boltalka
+        try:
+            magic_ball(msg, args)
+        except ValueError:
+            if any(s in args for s in calls) or (
+                    msg.chat.type == "private" and any(s in args for s in calls_private)):
                 active_chats.append(str(msg.chat.id))
                 ai_datas.append({"instances": [{"contexts": [[]]}]})
-                magic_ball(msg, current)
+                magic_ball(msg, args)
                 save()
 
 
@@ -429,4 +470,5 @@ def on_edit(msg: telebot.types.Message):
 
 # Запуск бота
 print("start")
+keep_alive()
 bot.infinity_polling(timeout=30, long_polling_timeout=60)
