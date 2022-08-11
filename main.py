@@ -25,7 +25,7 @@ def update_groups(load=False):
         else:
             groups_file.truncate()
             groups_file.writelines(str(x) + ':  ' + str(y) for x, y in groups)
-    groups_str = ''.join('`' + str(x) + '`:  *' + str(y) + '*' for x, y in groups)
+    groups_str = ''.join('<pre>' + str(x) + '</pre>:  <b>' + str(y) + '</b>' for x, y in groups)
 
 
 def save():
@@ -50,6 +50,7 @@ def save():
 groups = []
 groups_str = ""
 update_groups(True)
+exp_letters = ["ъ", "ы", "ь", "й"]
 
 ignore = json.loads(config["Settings"]['ignore'])
 ans = json.loads(config["Settings"]['ans'])
@@ -88,12 +89,11 @@ def get_id(message):
 def start_chat(chat_id, chat):
     try:
         if chat == chat_id:
-            bot.send_message(chat_id, "*Нельзя писать самому себе через Козловского.*", 'Markdown')
+            bot.send_message(chat_id, "<b>Нельзя писать самому себе через Козловского.</b>", 'HTML')
             return
         if chat_id in chat_id_my:
-            bot.send_message(chat_id,
-                             "*Вы уже пишете кому-то через Козловского.\nЧтобы законичить, введите /cancel*",
-                             'Markdown')
+            bot.send_message(chat_id, "<b>Вы уже пишете кому-то через Козловского.\n"
+                                      "Чтобы законичить, введите /cancel</b>", 'HTML')
             return
         chat_info = bot.get_chat(chat)
         markup = telebot.types.InlineKeyboardMarkup()
@@ -159,8 +159,8 @@ def n(text, addition=''):
 def parse_chat(chat: telebot.types.Chat):
     text = "<b>Начат чат с:</b>\n\n"
     if chat.type == "private":
-        text += "Человек: " + chat.first_name + n(chat.last_name, ' ') + \
-                n(chat.bio, '\nОписание: ') + n(chat.username, '\n@')
+        text += 'Человек<b><a href="tg://user?id=' + str(chat.id) + '">: ' + chat.first_name + \
+                n(chat.last_name, ' ') + '</a></b>' + n(chat.bio, '\nОписание: ') + n(chat.username, '\n@')
     elif chat.type == "channel":
         return str(todict(chat))
     else:
@@ -191,8 +191,8 @@ def chatting(msg: telebot.types.Message):
             markup = telebot.types.InlineKeyboardMarkup()
             markup.add(
                 telebot.types.InlineKeyboardButton(text="Ignore", callback_data="btn_ignore_" + str(msg.chat.id)))
-            bot.send_message(admin, "*Новая группа: " + msg.chat.title + "  " + str(msg.chat.id) + "*", 'Markdown',
-                             reply_markup=markup)
+            bot.send_message(admin, "<b>Новая группа: " + msg.chat.title + "  <pre>" + str(msg.chat.id) + "</pre></b>",
+                             'HTML', reply_markup=markup)
             groups.append([str(msg.chat.id), msg.chat.title + '\n'])
             update_groups()
             return
@@ -230,12 +230,12 @@ def chatting(msg: telebot.types.Message):
             current_user = str(msg.from_user.id)
             save()
             if msg.chat.type == "private":
-                bot.send_message(admin, "*" +
-                                 str(msg.chat.first_name) + " " + str(msg.chat.id) + "*", 'Markdown')
+                bot.send_message(admin, "<b>" +
+                                 str(msg.chat.first_name) + " " + str(msg.chat.id) + "</b>", 'HTML')
             else:
-                bot.send_message(admin, "*" +
+                bot.send_message(admin, "<b>" +
                                  str(msg.from_user.first_name) + " " + str(msg.from_user.id) + "\n " +
-                                 str(msg.chat.title) + " " + str(msg.chat.id) + "*", 'Markdown')
+                                 str(msg.chat.title) + " " + str(msg.chat.id) + "</b>", 'HTML')
         bot.copy_message(admin, msg.chat.id, msg.id)
 
     # voter
@@ -287,8 +287,8 @@ def chatting(msg: telebot.types.Message):
         if msg.chat.type != "private":
             if str(msg.from_user.id) not in current_users[other_index]:
                 current_users[other_index] = str(msg.from_user.id)
-                bot.send_message(chat_id_my[other_index],
-                                 "*" + str(msg.from_user.first_name) + " " + str(msg.from_user.id) + "*", 'Markdown')
+                bot.send_message(chat_id_my[other_index], "<b>" + str(msg.from_user.first_name) + " <pre>" + str(
+                    msg.from_user.id) + "</pre></b>", 'HTML')
         reply = None
         try:
             reply = chat_msg_my[other_index][chat_msg_pen[other_index].index(msg.reply_to_message.message_id)]
@@ -307,11 +307,11 @@ def chatting(msg: telebot.types.Message):
             reply = msg.reply_to_message.message_id
             my_index = chat_id_my.index(str(msg.chat.id))
             bot.delete_message(chat_id_pen[my_index], chat_msg_pen[my_index][chat_msg_my[my_index].index(reply)])
-            bot.send_message(msg.chat.id, "_Сообщение удалено._", 'Markdown')
+            bot.send_message(msg.chat.id, "<u>Сообщение удалено.</u>", 'HTML')
         except AttributeError:
             bot.send_message(msg.chat.id, "Ответьте командой /delete на сообщение, которое требуется удалить.")
         except telebot.apihelper.ApiTelegramException:
-            bot.send_message(msg.chat.id, "_Не удалось удалить сообщение._", 'Markdown')
+            bot.send_message(msg.chat.id, "<u>Не удалось удалить сообщение.</u>", 'HTML')
         except ValueError:
             pass
 
@@ -321,8 +321,8 @@ def chatting(msg: telebot.types.Message):
 
     # groups
     elif current.startswith("/groups"):
-        bot.send_message(msg.chat.id, "_Группы, в которых состоит Козловский:_\n"
-                                      "*Чтобы скопировать chat-id, нажмите на него.*\n\n" + groups_str, 'Markdown')
+        bot.send_message(msg.chat.id, "<u>Группы, в которых состоит Козловский:</u>\n"
+                                      "<b>Чтобы скопировать chat_id, нажмите на него.</b>\n\n" + groups_str, 'HTML')
 
     # chat228
     elif current.startswith("/chat"):
@@ -349,13 +349,8 @@ def chatting(msg: telebot.types.Message):
         except ValueError:
             pass
         except telebot.apihelper.ApiTelegramException as err:
-            if err.error_code == 403:
-                bot.send_message(msg.chat.id,
-                                 "*Этому человеку невозможно написать через Козловского. Он ещё не общался со мной.*_("
-                                 + str(err.description) + ")_",
-                                 'Markdown')
-            else:
-                bot.send_message(msg.chat.id, "Ошибка: " + str(err))
+            bot.send_message(msg.chat.id, "<b>Этому человеку невозможно написать через Козловского."
+                                          "Он ещё не общался со мной.</b><u>(" + str(err.description) + ")</u>", 'HTML')
 
     # fun
     if str(msg.chat.id) not in chat_id_my and str(msg.chat.id) not in wait_for_chat_id:
@@ -384,7 +379,7 @@ def chatting(msg: telebot.types.Message):
             if any(s in args for s in ends):
                 active_goroda.pop(index)
                 current_letters.pop(index)
-                bot.send_message(msg.chat.id, "*Конец игры*", "Markdown")
+                bot.send_message(msg.chat.id, "<b>Конец игры</b>", "HTML")
                 save()
                 return
             city = n(current) + n(msg.caption)
@@ -392,21 +387,23 @@ def chatting(msg: telebot.types.Message):
                 if city[0] == current_letters[index] or current_letters[index] == "":
                     random_city = random.choice(goroda[city[-1]])
                     bot.send_message(msg.chat.id, random_city)
-                    if random_city[-1] in ["ъ", "ы", "ь", "й"]:
-                        current_letters[index] = random_city[-2]
+                    if random_city[-1] in exp_letters:
+                        if random_city[-2] in exp_letters:
+                            current_letters[index] = random_city[-3]
+                        else:
+                            current_letters[index] = random_city[-2]
                     else:
                         current_letters[index] = random_city[-1]
                     save()
                 else:
-                    bot.send_message(msg.chat.id,
-                                     f"*Слово должно начинаться на букву:*  _{current_letters[index].upper()}_",
-                                     "Markdown")
+                    bot.send_message(msg.chat.id, f"<b>Слово должно начинаться на букву:</b>  "
+                                                  f"<u>{current_letters[index].upper()}</u>", "HTML")
                 return
         except ValueError:
             if "в города" in current:
                 active_goroda.append(str(msg.chat.id))
                 current_letters.append("")
-                bot.send_message(msg.chat.id, "*Вы начали игру в города.*\n_Начинайте первым!_", "Markdown")
+                bot.send_message(msg.chat.id, "<b>Вы начали игру в города.</b>\n<u>Начинайте первым!</u>", "HTML")
                 save()
         # ai boltalka
         try:
@@ -431,14 +428,14 @@ def query(call):
         start_chat(str(call.message.chat.id), data.split("btn_chat_")[1])
     elif data.startswith("btn_photo_"):
         file_id = data.split("btn_photo_")[1]
-        sticker_id = images.get(file_id)
-        if sticker_id is None:
-            sticker_id = bot.send_sticker(call.message.chat.id,
-                                          bot.download_file(bot.get_file(file_id).file_path)).sticker.file_id
-            images.setdefault(file_id, sticker_id)
+        photo_id = images.get(file_id)
+        if photo_id is None:
+            photo_id = bot.send_photo(call.message.chat.id,
+                                      bot.download_file(bot.get_file(file_id).file_path)).photo[0].file_id
+            images.setdefault(file_id, photo_id)
             save()
         else:
-            bot.send_sticker(call.message.chat.id, sticker_id)
+            bot.send_photo(call.message.chat.id, photo_id)
 
     elif data.startswith("btn_pinned_"):
         forward = data.split("_")
