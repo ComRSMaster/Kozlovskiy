@@ -1,11 +1,13 @@
 import configparser
 import json
 import random
+import re
 
 import requests
 import telebot
+from bs4 import BeautifulSoup
 
-from webserver import keep_alive
+import webserver
 
 content_types = ["text", "audio", "document", "photo", "sticker", "video", "video_note", "voice", "location", "contact",
                  "new_chat_title", "group_chat_created", "supergroup_chat_created", "channel_chat_created",
@@ -13,7 +15,8 @@ content_types = ["text", "audio", "document", "photo", "sticker", "video", "vide
 admin = "-1001624831175"
 config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
-bot = telebot.TeleBot(config["Settings"]['token'])
+TOKEN = config["Settings"]['token']
+bot = telebot.TeleBot(TOKEN)
 
 
 def update_groups(load=False):
@@ -50,7 +53,6 @@ def save():
 groups = []
 groups_str = ""
 update_groups(True)
-exp_letters = ["ъ", "ы", "ь", "й"]
 
 ignore = json.loads(config["Settings"]['ignore'])
 ans = json.loads(config["Settings"]['ans'])
@@ -60,6 +62,7 @@ images: dict = json.loads(config["Settings"]['images'])
 calls = json.loads(config["Settings"]['calls'])
 calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
+searches = json.loads(config["Settings"]['searches'])
 randoms = json.loads(config["Settings"]['randoms'])
 current_chat = config["Dump"]['current_chat']
 current_user = config["Dump"]['current_user']
@@ -118,6 +121,12 @@ def start_chat(chat_id, chat):
         bot.send_message(chat_id, "Неправильный chat_id")
 
 
+def get_city_letter(str_city, i=-1):
+    if str_city[i] in goroda:
+        return str_city[i]
+    return str_city[i - 1]
+
+
 def magic_ball(msg: telebot.types.Message, args):
     index = active_chats.index(str(msg.chat.id))
     if any(s in args for s in ends):
@@ -129,8 +138,7 @@ def magic_ball(msg: telebot.types.Message, args):
     message = n(msg.text) + n(msg.caption)
     if message != "":
         ai_datas[index]["instances"][0]["contexts"][0].append(message)
-        res = requests.post(
-            'https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict', json=ai_datas[index]).json()
+        res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict', json=ai_datas[index]).json()
         answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
         bot.send_message(msg.chat.id, answer)
         ai_datas[index]["instances"][0]["contexts"][0].append(answer)
@@ -139,6 +147,18 @@ def magic_ball(msg: telebot.types.Message, args):
         #     bot.send_voice(msg.chat.id, random.choice(ans_voice))
         # else:
         #     bot.send_message(msg.chat.id, random.choice(ans))
+
+
+def get_person(search_photo):
+    url_pic = "https://yandex.ru/images/search?rpt=imageview&url=https://api.telegram.org/file/bot" + \
+              TOKEN + "/" + bot.get_file(search_photo.file_id).file_path
+    soup = BeautifulSoup(requests.get(url_pic).text, 'lxml')
+    results_vk = soup.find('div', class_='CbirSites-ItemInfo')
+    if 'vk.com/id' in results_vk.find('a').get('href'):
+        return results_vk.find('div', class_='CbirSites-ItemDescription').get_text()
+    results = soup.find('section', 'CbirTags').find_all('a')
+
+    return results[0].find('span').get_text() + ", " + results[1].find('span').get_text()
 
 
 def todict(obj):
@@ -152,7 +172,7 @@ def todict(obj):
 
 
 def n(text, addition=''):
-    """если text - None, то вернуть пустую строку"""
+    """Если text - None, то вернуть пустую строку"""
     return "" if text is None else addition + text
 
 
@@ -174,8 +194,8 @@ def chatting(msg: telebot.types.Message):
     global current_chat
     global current_user
 
-    current = str(msg.text).lower()
-    args = current.split(" ")
+    current = str(n(msg.text) + n(msg.caption)).lower()
+    args = re.split(r'[ ,.;&!?\[\]]+', current)
     # group management
     if msg.chat.type != "private":
         new_group = False
@@ -307,11 +327,11 @@ def chatting(msg: telebot.types.Message):
             reply = msg.reply_to_message.message_id
             my_index = chat_id_my.index(str(msg.chat.id))
             bot.delete_message(chat_id_pen[my_index], chat_msg_pen[my_index][chat_msg_my[my_index].index(reply)])
-            bot.send_message(msg.chat.id, "<u>Сообщение удалено.</u>", 'HTML')
+            bot.send_message(msg.chat.id, "<i>Сообщение удалено.</i>", 'HTML')
         except AttributeError:
             bot.send_message(msg.chat.id, "Ответьте командой /delete на сообщение, которое требуется удалить.")
         except telebot.apihelper.ApiTelegramException:
-            bot.send_message(msg.chat.id, "<u>Не удалось удалить сообщение.</u>", 'HTML')
+            bot.send_message(msg.chat.id, "<i>Не удалось удалить сообщение.</i>", 'HTML')
         except ValueError:
             pass
 
@@ -321,7 +341,7 @@ def chatting(msg: telebot.types.Message):
 
     # groups
     elif current.startswith("/groups"):
-        bot.send_message(msg.chat.id, "<u>Группы, в которых состоит Козловский:</u>\n"
+        bot.send_message(msg.chat.id, "<i>Группы, в которых состоит Козловский:</i>\n"
                                       "<b>Чтобы скопировать chat_id, нажмите на него.</b>\n\n" + groups_str, 'HTML')
 
     # chat228
@@ -350,7 +370,7 @@ def chatting(msg: telebot.types.Message):
             pass
         except telebot.apihelper.ApiTelegramException as err:
             bot.send_message(msg.chat.id, "<b>Этому человеку невозможно написать через Козловского."
-                                          "Он ещё не общался со мной.</b><u>(" + str(err.description) + ")</u>", 'HTML')
+                                          "Он ещё не общался со мной.</b><i>(" + str(err.description) + ")</i>", 'HTML')
 
     # fun
     if str(msg.chat.id) not in chat_id_my and str(msg.chat.id) not in wait_for_chat_id:
@@ -373,6 +393,17 @@ def chatting(msg: telebot.types.Message):
             bot.send_message(msg.chat.id,
                              f"Случайное число от {start_num} до {end_num}: {random.randint(start_num, end_num)}")
             return
+        # image search
+        if any(s in args for s in searches):
+            try:
+                search_photo = msg.photo[-1]
+            except (TypeError, AttributeError):
+                try:
+                    search_photo = msg.reply_to_message.photo[-1]
+                except (TypeError, AttributeError):
+                    return
+            bot.send_message(msg.chat.id, get_person(search_photo))
+            return
         # goroda game
         try:
             index = active_goroda.index(str(msg.chat.id))
@@ -385,25 +416,22 @@ def chatting(msg: telebot.types.Message):
             city = n(current) + n(msg.caption)
             if city != "":
                 if city[0] == current_letters[index] or current_letters[index] == "":
-                    random_city = random.choice(goroda[city[-1]])
-                    bot.send_message(msg.chat.id, random_city)
-                    if random_city[-1] in exp_letters:
-                        if random_city[-2] in exp_letters:
-                            current_letters[index] = random_city[-3]
-                        else:
-                            current_letters[index] = random_city[-2]
-                    else:
-                        current_letters[index] = random_city[-1]
-                    save()
+                    try:
+                        random_city = random.choice(goroda[get_city_letter(city)])
+                        bot.send_message(msg.chat.id, random_city)
+                        current_letters[index] = get_city_letter(random_city)
+                        save()
+                    except IndexError:
+                        bot.send_message(msg.chat.id, "<b>Невозможно сгенерировать город</b>")
                 else:
                     bot.send_message(msg.chat.id, f"<b>Слово должно начинаться на букву:</b>  "
-                                                  f"<u>{current_letters[index].upper()}</u>", "HTML")
+                                                  f"<i>{current_letters[index].upper()}</i>", "HTML")
                 return
         except ValueError:
             if "в города" in current:
                 active_goroda.append(str(msg.chat.id))
                 current_letters.append("")
-                bot.send_message(msg.chat.id, "<b>Вы начали игру в города.</b>\n<u>Начинайте первым!</u>", "HTML")
+                bot.send_message(msg.chat.id, "<b>Вы начали игру в города.</b>\n<i>Начинайте первым!</i>", "HTML")
                 save()
         # ai boltalka
         try:
@@ -467,5 +495,5 @@ def on_edit(msg: telebot.types.Message):
 
 # Запуск бота
 print("start")
-keep_alive()
+webserver.keep_alive()
 bot.infinity_polling(timeout=30, long_polling_timeout=60)
