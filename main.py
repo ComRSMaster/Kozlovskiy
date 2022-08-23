@@ -2,6 +2,10 @@ import configparser
 import json
 import random
 import re
+import time
+from datetime import datetime
+from threading import Thread
+from zoneinfo import ZoneInfo
 
 import requests
 import telebot
@@ -17,6 +21,10 @@ config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
 TOKEN = config["Settings"]['token']
 bot = telebot.TeleBot(TOKEN)
+MIN_IGNORE_TIME = 1000
+MAX_IGNORE_TIME = 3600
+MIN_ALLOWED_HOUR = 8
+MAX_ALLOWED_HOUR = 22
 
 
 def update_groups(load=False):
@@ -36,6 +44,8 @@ def save():
     config.set('Settings', 'images', json.dumps(images))
     config.set('Dump', 'current_chat', current_chat)
     config.set('Dump', 'current_user', current_user)
+    config.set('Dump', 'auto_start', json.dumps(auto_start))
+    config.set('Dump', 'users', json.dumps(users))
     config.set('Dump', 'active_chats', json.dumps(active_chats))
     config.set('Dump', 'active_goroda', json.dumps(active_goroda))
     config.set('Dump', 'current_letters', json.dumps(current_letters, ensure_ascii=False))
@@ -58,7 +68,7 @@ ignore = json.loads(config["Settings"]['ignore'])
 ans = json.loads(config["Settings"]['ans'])
 ans_voice = json.loads(config["Settings"]['ans_voice'])
 images: dict = json.loads(config["Settings"]['images'])
-# starts = json.loads(config["Settings"]['starts'])
+starts = json.loads(config["Settings"]['starts'])
 calls = json.loads(config["Settings"]['calls'])
 calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
@@ -66,6 +76,8 @@ searches = json.loads(config["Settings"]['searches'])
 randoms = json.loads(config["Settings"]['randoms'])
 current_chat = config["Dump"]['current_chat']
 current_user = config["Dump"]['current_user']
+auto_start: dict = json.loads(config["Dump"]['auto_start'])
+users = json.loads(config["Dump"]['users'])
 active_chats: list = json.loads(config["Dump"]['active_chats'])
 active_goroda: list = json.loads(config["Dump"]['active_goroda'])
 current_letters = json.loads(config["Dump"]['current_letters'])
@@ -127,38 +139,52 @@ def get_city_letter(str_city, i=-1):
     return str_city[i - 1]
 
 
-def magic_ball(msg: telebot.types.Message, args):
-    index = active_chats.index(str(msg.chat.id))
-    if any(s in args for s in ends):
-        active_chats.pop(index)
-        ai_datas.pop(index)
-        bot.send_message(msg.chat.id, "Пока")
-        save()
-        return
-    message = n(msg.text) + n(msg.caption)
-    if message != "":
-        ai_datas[index]["instances"][0]["contexts"][0].append(message)
-        res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict', json=ai_datas[index]).json()
-        answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
-        bot.send_message(msg.chat.id, answer)
-        ai_datas[index]["instances"][0]["contexts"][0].append(answer)
-        save()
-        # if msg.content_type == "voice":
-        #     bot.send_voice(msg.chat.id, random.choice(ans_voice))
-        # else:
-        #     bot.send_message(msg.chat.id, random.choice(ans))
+def set_next_time(chat_id: str):
+    auto_start[chat_id] = datetime.now(ZoneInfo("Europe/Moscow")).timestamp() + \
+                          random.randint(MIN_IGNORE_TIME, MAX_IGNORE_TIME)
 
 
-def get_person(search_photo):
+def ai_talk(chat_id: str, msg_text, args, is_private=True, auto_answer=""):
+    try:
+        index = active_chats.index(chat_id)
+        if any(s in args for s in ends):
+            active_chats.pop(index)
+            ai_datas.pop(index)
+            bot.send_message(chat_id, "Пока")
+            save()
+            return
+        if msg_text != "":
+            bot.send_chat_action(chat_id, action="typing")
+            ai_datas[index]["instances"][0]["contexts"][0].append(msg_text)
+            if auto_answer == "":
+                res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
+                                    json=ai_datas[index]).json()
+                answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
+            else:
+                answer = auto_answer
+            set_next_time(chat_id)
+            bot.send_message(chat_id, answer, "HTML", disable_notification=auto_answer != "")
+            ai_datas[index]["instances"][0]["contexts"][0].append(answer)
+            save()
+    except ValueError:
+        if any(s in args for s in calls) or (is_private and any(s in args for s in calls_private)):
+            active_chats.append(str(chat_id))
+            ai_datas.append({"instances": [{"contexts": [[]]}]})
+            ai_talk(chat_id, msg_text, args, is_private, auto_answer)
+            save()
+
+
+def photo_search(chat_id, search_photo):
+    bot.send_chat_action(chat_id, action="typing")
     url_pic = "https://yandex.ru/images/search?rpt=imageview&url=https://api.telegram.org/file/bot" + \
               TOKEN + "/" + bot.get_file(search_photo.file_id).file_path
     soup = BeautifulSoup(requests.get(url_pic).text, 'lxml')
     results_vk = soup.find('div', class_='CbirSites-ItemInfo')
     if 'vk.com/id' in results_vk.find('a').get('href'):
-        return results_vk.find('div', class_='CbirSites-ItemDescription').get_text()
+        bot.send_message(chat_id, results_vk.find('div', class_='CbirSites-ItemDescription').get_text())
+        return
     results = soup.find('section', 'CbirTags').find_all('a')
-
-    return results[0].find('span').get_text() + ", " + results[1].find('span').get_text()
+    bot.send_message(chat_id, results[0].find('span').get_text() + ", " + results[1].find('span').get_text())
 
 
 def todict(obj):
@@ -196,8 +222,13 @@ def chatting(msg: telebot.types.Message):
 
     current = str(n(msg.text) + n(msg.caption)).lower()
     args = re.split(r'[ ,.;&!?\[\]]+', current)
-    # group management
-    if msg.chat.type != "private":
+    # chat management
+    if msg.chat.type == "private":
+        if str(msg.chat.id) not in users:
+            users.append(str(msg.chat.id))
+            set_next_time(str(msg.chat.id))
+            save()
+    else:
         new_group = False
         if msg.content_type in ["group_chat_created", "supergroup_chat_created", "channel_chat_created"]:
             new_group = True
@@ -321,8 +352,23 @@ def chatting(msg: telebot.types.Message):
     except ValueError:
         pass
 
+    # ignore
+    if current.startswith("/ignore"):
+        if msg.chat.type != "private":
+            bot.send_message(msg.chat.id, "<i>Эту команду можно использовать только в лс</i>", 'HTML')
+            return
+        try:
+            auto_start.pop(str(msg.chat.id))
+            bot.send_message(msg.chat.id, "<b>Теперь Козловский не будет начинать переписку сам.</b>\n"
+                                          "<i>Чтобы вернуть всё как было, введите /ignore ещё раз.</i>", 'HTML')
+        except KeyError:
+            set_next_time(str(msg.chat.id))
+            bot.send_message(msg.chat.id, "<b>Теперь Козловский сможет начать переписку сам</b>", 'HTML')
+        save()
+        return
+
     # delete
-    if current.startswith("/delete"):
+    elif current.startswith("/delete"):
         try:
             reply = msg.reply_to_message.message_id
             my_index = chat_id_my.index(str(msg.chat.id))
@@ -334,15 +380,18 @@ def chatting(msg: telebot.types.Message):
             bot.send_message(msg.chat.id, "<i>Не удалось удалить сообщение.</i>", 'HTML')
         except ValueError:
             pass
+        return
 
     # id
     elif current.startswith("/id"):
         get_id(msg)
+        return
 
     # groups
     elif current.startswith("/groups"):
         bot.send_message(msg.chat.id, "<i>Группы, в которых состоит Козловский:</i>\n"
                                       "<b>Чтобы скопировать chat_id, нажмите на него.</b>\n\n" + groups_str, 'HTML')
+        return
 
     # chat228
     elif current.startswith("/chat"):
@@ -394,16 +443,15 @@ def chatting(msg: telebot.types.Message):
                              f"Случайное число от {start_num} до {end_num}: {random.randint(start_num, end_num)}")
             return
         # image search
-        if any(s in args for s in searches):
+        if any(s in current for s in searches):
             try:
-                search_photo = msg.photo[-1]
+                photo_search(msg.chat.id, msg.photo[-1])
             except (TypeError, AttributeError):
                 try:
-                    search_photo = msg.reply_to_message.photo[-1]
-                except (TypeError, AttributeError):
+                    photo_search(msg.chat.id, msg.reply_to_message.photo[-1])
                     return
-            bot.send_message(msg.chat.id, get_person(search_photo))
-            return
+                except (TypeError, AttributeError):
+                    pass
         # goroda game
         try:
             index = active_goroda.index(str(msg.chat.id))
@@ -433,16 +481,8 @@ def chatting(msg: telebot.types.Message):
                 current_letters.append("")
                 bot.send_message(msg.chat.id, "<b>Вы начали игру в города.</b>\n<i>Начинайте первым!</i>", "HTML")
                 save()
-        # ai boltalka
-        try:
-            magic_ball(msg, args)
-        except ValueError:
-            if any(s in args for s in calls) or (
-                    msg.chat.type == "private" and any(s in args for s in calls_private)):
-                active_chats.append(str(msg.chat.id))
-                ai_datas.append({"instances": [{"contexts": [[]]}]})
-                magic_ball(msg, args)
-                save()
+        # ai talk
+        ai_talk(str(msg.chat.id), n(msg.text) + n(msg.caption), args, msg.chat.type == "private")
 
 
 @bot.callback_query_handler(func=lambda call: 'btn' in call.data)
@@ -457,6 +497,7 @@ def query(call):
     elif data.startswith("btn_photo_"):
         file_id = data.split("btn_photo_")[1]
         photo_id = images.get(file_id)
+        bot.send_chat_action(call.message.chat.id, action="upload_photo")
         if photo_id is None:
             photo_id = bot.send_photo(call.message.chat.id,
                                       bot.download_file(bot.get_file(file_id).file_path)).photo[0].file_id
@@ -493,7 +534,22 @@ def on_edit(msg: telebot.types.Message):
         pass
 
 
+def timer():
+    while True:
+        for key in auto_start:
+            if key in chat_id_my or key in wait_for_chat_id:
+                continue
+            now = datetime.now(ZoneInfo("Europe/Moscow"))
+            if auto_start[key] <= now.timestamp() and MIN_ALLOWED_HOUR <= now.hour <= MAX_ALLOWED_HOUR:
+                ai_talk(key, "Привет", ["привет"],
+                        auto_answer=random.choice(starts) + "\n<i>(/ignore - запретить "
+                                                            "Козловскому начинать переписку)</i>")
+        time.sleep(1000)
+
+
 # Запуск бота
 print("start")
 webserver.keep_alive()
+timer_thread = Thread(target=timer)
+timer_thread.start()
 bot.infinity_polling(timeout=30, long_polling_timeout=60)

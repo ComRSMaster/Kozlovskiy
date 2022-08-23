@@ -3,7 +3,6 @@ from threading import Thread
 from flask import Flask
 
 app = Flask('')
-current_image = b""
 
 
 @app.route('/')
