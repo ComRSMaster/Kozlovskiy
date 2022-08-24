@@ -1,5 +1,6 @@
 import configparser
 import json
+import os
 import random
 import re
 import time
@@ -13,18 +14,27 @@ from bs4 import BeautifulSoup
 
 import webserver
 
+
+class ExceptionHandler(telebot.ExceptionHandler):
+    def handle(self, exception):
+        if "Bot token is not defined" in exception.args[0]:
+            print("Неправильный токен бота")
+            # noinspection PyProtectedMember
+            os._exit(0)
+
+
 content_types = ["text", "audio", "document", "photo", "sticker", "video", "video_note", "voice", "location", "contact",
                  "new_chat_title", "group_chat_created", "supergroup_chat_created", "channel_chat_created",
                  "migrate_to_chat_id", "poll"]
-admin = "-1001624831175"
+admin_chat = "-1001624831175"
 config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
-TOKEN = config["Settings"]['token']
-bot = telebot.TeleBot(TOKEN)
-MIN_IGNORE_TIME = 1000
-MAX_IGNORE_TIME = 3600
-MIN_ALLOWED_HOUR = 8
-MAX_ALLOWED_HOUR = 22
+TOKEN = os.getenv("Kozlovskiy_token")
+bot = telebot.TeleBot(TOKEN, exception_handler=ExceptionHandler())
+MIN_IGNORE_TIME = 80000
+MAX_IGNORE_TIME = 700000
+MIN_ALLOWED_HOUR = 12
+MAX_ALLOWED_HOUR = 21
 
 
 def update_groups(load=False):
@@ -163,7 +173,7 @@ def ai_talk(chat_id: str, msg_text, args, is_private=True, auto_answer=""):
             else:
                 answer = auto_answer
             set_next_time(chat_id)
-            bot.send_message(chat_id, answer, "HTML", disable_notification=auto_answer != "")
+            bot.send_message(chat_id, answer, disable_notification=auto_answer != "")
             ai_datas[index]["instances"][0]["contexts"][0].append(answer)
             save()
     except ValueError:
@@ -242,7 +252,8 @@ def chatting(msg: telebot.types.Message):
             markup = telebot.types.InlineKeyboardMarkup()
             markup.add(
                 telebot.types.InlineKeyboardButton(text="Ignore", callback_data="btn_ignore_" + str(msg.chat.id)))
-            bot.send_message(admin, "<b>Новая группа: " + msg.chat.title + "  <pre>" + str(msg.chat.id) + "</pre></b>",
+            bot.send_message(admin_chat,
+                             "<b>Новая группа: " + msg.chat.title + "  <pre>" + str(msg.chat.id) + "</pre></b>",
                              'HTML', reply_markup=markup)
             groups.append([str(msg.chat.id), msg.chat.title + '\n'])
             update_groups()
@@ -281,13 +292,13 @@ def chatting(msg: telebot.types.Message):
             current_user = str(msg.from_user.id)
             save()
             if msg.chat.type == "private":
-                bot.send_message(admin, "<b>" +
+                bot.send_message(admin_chat, "<b>" +
                                  str(msg.chat.first_name) + " " + str(msg.chat.id) + "</b>", 'HTML')
             else:
-                bot.send_message(admin, "<b>" +
+                bot.send_message(admin_chat, "<b>" +
                                  str(msg.from_user.first_name) + " " + str(msg.from_user.id) + "\n " +
                                  str(msg.chat.title) + " " + str(msg.chat.id) + "</b>", 'HTML')
-        bot.copy_message(admin, msg.chat.id, msg.id)
+        bot.copy_message(admin_chat, msg.chat.id, msg.id)
 
     # voter
     if msg.content_type == "poll":
@@ -541,15 +552,15 @@ def timer():
                 continue
             now = datetime.now(ZoneInfo("Europe/Moscow"))
             if auto_start[key] <= now.timestamp() and MIN_ALLOWED_HOUR <= now.hour <= MAX_ALLOWED_HOUR:
-                ai_talk(key, "Привет", ["привет"],
-                        auto_answer=random.choice(starts) + "\n<i>(/ignore - запретить "
-                                                            "Козловскому начинать переписку)</i>")
-        time.sleep(1000)
+                bot.send_message(key, "<i>/ignore - запретить Козловскому самому начинать переписку</i>", "HTML",
+                                 disable_notification=True)
+                ai_talk(key, "Привет", ["привет"], auto_answer=random.choice(starts))
+        time.sleep(1)
 
 
 # Запуск бота
-print("start")
 webserver.keep_alive()
 timer_thread = Thread(target=timer)
 timer_thread.start()
+print("start")
 bot.infinity_polling(timeout=30, long_polling_timeout=60)
