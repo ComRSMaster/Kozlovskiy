@@ -33,7 +33,7 @@ TOKEN = os.getenv("Kozlovskiy_token")
 bot = telebot.TeleBot(TOKEN, exception_handler=ExceptionHandler())
 MIN_IGNORE_TIME = 80000
 MAX_IGNORE_TIME = 700000
-MIN_ALLOWED_HOUR = 12
+MIN_ALLOWED_HOUR = 13
 MAX_ALLOWED_HOUR = 21
 
 
@@ -93,7 +93,7 @@ active_goroda: list = json.loads(config["Dump"]['active_goroda'])
 current_letters = json.loads(config["Dump"]['current_letters'])
 wait_for_chat_id = json.loads(config["Dump"]['wait_for_chat_id'])
 chat_id_my = json.loads(config["Dump"]['chat_id_my'])
-chat_id_pen = json.loads(config["Dump"]['chat_id_pen'])
+chat_id_pen: list = json.loads(config["Dump"]['chat_id_pen'])
 chat_msg_my = json.loads(config["Dump"]['chat_msg_my'])
 chat_msg_pen = json.loads(config["Dump"]['chat_msg_pen'])
 current_users = json.loads(config["Dump"]['current_users'])
@@ -124,13 +124,13 @@ def start_chat(chat_id, chat):
         markup = telebot.types.InlineKeyboardMarkup()
         if chat_info.photo is not None:
             markup.add(telebot.types.InlineKeyboardButton(text="Посмотреть фото профиля",
-                                                          callback_data="btn_photo_" + chat_info.photo.big_file_id))
+                                                          callback_data="btn_photo_" + chat))
         if chat_info.pinned_message is not None:
             markup.add(telebot.types.InlineKeyboardButton(
                 text="Посмотреть закреп", callback_data=f"btn_pinned_{chat_info.pinned_message.chat.id}_"
                                                         f"{chat_info.pinned_message.message_id}_"
                                                         f"{chat_info.pinned_message.from_user.first_name}"))
-        bot.send_message(chat_id, parse_chat(chat_info) + "\n<b>/cancel - закончить переписку\n"
+        bot.send_message(chat_id, parse_chat(chat_info) + "\n\n<b>/cancel - закончить переписку\n"
                                                           "/delete - удалить сообщение у собеседника</b>", 'HTML',
                          reply_markup=markup)
         chat_id_my.append(chat_id)
@@ -207,21 +207,33 @@ def todict(obj):
     return data
 
 
-def n(text, addition=''):
+def n(text: str, addition=''):
     """Если text - None, то вернуть пустую строку"""
-    return "" if text is None else addition + text
+    try:
+        return "" if text is None else addition + text
+    except telebot.apihelper.ApiTelegramException:
+        return ""
 
 
 def parse_chat(chat: telebot.types.Chat):
     text = "<b>Начат чат с:</b>\n\n"
     if chat.type == "private":
-        text += 'Человек<b><a href="tg://user?id=' + str(chat.id) + '">: ' + chat.first_name + \
-                n(chat.last_name, ' ') + '</a></b>' + n(chat.bio, '\nОписание: ') + n(chat.username, '\n@')
+        text += '<b>Человек<a href="tg://user?id=' + str(chat.id) + '">: ' + chat.first_name + \
+                n(chat.last_name, ' ') + '</a></b>' + n(chat.bio, '\n<b>Описание:</b> ') + n(chat.username, '\n@')
     elif chat.type == "channel":
         return str(todict(chat))
     else:
-        text += "Группа: " + chat.title + n(chat.description, '\nОписание: ') + \
-                n(chat.username, '\n@') + n(chat.invite_link, '\nСсылка: ')
+        text += "<b>Группа:</b> " + chat.title + n(chat.description, '\n<b>Описание:</b> ') + \
+                n(chat.username, '\n@') + n(chat.invite_link, '\n<b>Ссылка:</b> ')
+        try:
+            text += n(str(bot.get_chat_member_count(chat.id)), '\n<b>Участников:</b> ')
+            text += "\n<b>Админы:</b> "
+            for m in bot.get_chat_administrators(chat.id):
+                text += '\n\n<b><a href="tg://user?id=' + str(m.user.id) + '">' + m.user.first_name +\
+                        '</a></b> <pre>' + str(m.user.id) + '</pre> ' + n(m.user.username, '\n@')
+
+        except telebot.apihelper.ApiTelegramException:
+            pass
     return text
 
 
@@ -345,21 +357,23 @@ def chatting(msg: telebot.types.Message):
         wait_for_chat_id.remove(str(msg.chat.id))
         save()
     try:
-        other_index = chat_id_pen.index(str(msg.chat.id))  # собеседник
-        if msg.chat.type != "private":
-            if str(msg.from_user.id) not in current_users[other_index]:
-                current_users[other_index] = str(msg.from_user.id)
-                bot.send_message(chat_id_my[other_index], "<b>" + str(msg.from_user.first_name) + " <pre>" + str(
-                    msg.from_user.id) + "</pre></b>", 'HTML')
-        reply = None
-        try:
-            reply = chat_msg_my[other_index][chat_msg_pen[other_index].index(msg.reply_to_message.message_id)]
-        except AttributeError:
-            pass
-        chat_msg_my[other_index].append(
-            bot.copy_message(chat_id_my[other_index], msg.chat.id, msg.id, reply_to_message_id=reply).message_id)
-        chat_msg_pen[other_index].append(msg.id)
-        save()
+        for other_index in range(len(chat_id_pen)):
+            if chat_id_pen[other_index] != str(msg.chat.id):  # собеседники
+                continue
+            if msg.chat.type != "private":
+                if str(msg.from_user.id) not in current_users[other_index]:
+                    current_users[other_index] = str(msg.from_user.id)
+                    bot.send_message(chat_id_my[other_index], "<b>" + str(msg.from_user.first_name) + " <pre>" + str(
+                        msg.from_user.id) + "</pre></b>", 'HTML')
+            reply = None
+            try:
+                reply = chat_msg_my[other_index][chat_msg_pen[other_index].index(msg.reply_to_message.message_id)]
+            except AttributeError:
+                pass
+            chat_msg_my[other_index].append(
+                bot.copy_message(chat_id_my[other_index], msg.chat.id, msg.id, reply_to_message_id=reply).message_id)
+            chat_msg_pen[other_index].append(msg.id)
+            save()
     except ValueError:
         pass
 
@@ -506,16 +520,34 @@ def query(call):
     elif data.startswith("btn_chat_"):
         start_chat(str(call.message.chat.id), data.split("btn_chat_")[1])
     elif data.startswith("btn_photo_"):
-        file_id = data.split("btn_photo_")[1]
-        photo_id = images.get(file_id)
         bot.send_chat_action(call.message.chat.id, action="upload_photo")
-        if photo_id is None:
-            photo_id = bot.send_photo(call.message.chat.id,
-                                      bot.download_file(bot.get_file(file_id).file_path)).photo[0].file_id
-            images.setdefault(file_id, photo_id)
-            save()
+        chat_id = data.split("btn_photo_")[1]
+        chat_info = bot.get_chat(chat_id)
+        if chat_info.type == "private":
+            profile_photos: list = bot.get_user_profile_photos(int(chat_id)).photos
+            chunks = [profile_photos[i:i + 10] for i in range(0, len(profile_photos), 10)]
+            for c in chunks:
+                media_group = []
+                new_photos = []
+                for i in range(len(c)):
+                    photo_id = images.get(c[i][-1].file_id)
+                    if photo_id is None:
+                        photo_id = bot.download_file(bot.get_file(c[i][-1].file_id).file_path)
+                        new_photos.append(i)
+                    media_group.append(telebot.types.InputMediaPhoto(photo_id))
+                sent_photos = bot.send_media_group(call.message.chat.id, media_group)
+                for i in new_photos:
+                    images.setdefault(c[i][-1].file_id, sent_photos[i].photo[-1].file_id)
         else:
-            bot.send_photo(call.message.chat.id, photo_id)
+            file_id = chat_info.photo.big_file_id
+            photo_id = images.get(file_id)
+            if photo_id is None:
+                photo_id = bot.send_photo(call.message.chat.id,
+                                          bot.download_file(bot.get_file(file_id).file_path)).photo[-1].file_id
+                images.setdefault(file_id, photo_id)
+            else:
+                bot.send_photo(call.message.chat.id, photo_id)
+        save()
 
     elif data.startswith("btn_pinned_"):
         forward = data.split("_")
@@ -555,7 +587,7 @@ def timer():
                 bot.send_message(key, "<i>/ignore - запретить Козловскому самому начинать переписку</i>", "HTML",
                                  disable_notification=True)
                 ai_talk(key, "Привет", ["привет"], auto_answer=random.choice(starts))
-        time.sleep(1)
+        time.sleep(1000)
 
 
 # Запуск бота
