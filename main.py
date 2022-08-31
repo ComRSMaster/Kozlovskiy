@@ -30,7 +30,6 @@ admin_chat = "-1001624831175"
 config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
 TOKEN = os.getenv("Kozlovskiy_token")
-imgbb_token = os.getenv("imgbb_token")
 bot = telebot.TeleBot(TOKEN, exception_handler=ExceptionHandler())
 MIN_IGNORE_TIME = 80000
 MAX_IGNORE_TIME = 700000
