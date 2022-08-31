@@ -24,29 +24,18 @@ class ExceptionHandler(telebot.ExceptionHandler):
 
 
 content_types = ["text", "audio", "document", "photo", "sticker", "video", "video_note", "voice", "location",
-                 "contact", "new_chat_title", "group_chat_created", "supergroup_chat_created",
+                 "contact", "group_chat_created", "supergroup_chat_created",
                  "channel_chat_created", "migrate_to_chat_id", "poll"]
 admin_chat = "-1001624831175"
 config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
+global_url = "https://Kozlovskiy.comrsmaster.repl.co/"
 TOKEN = os.getenv("Kozlovskiy_token")
 bot = telebot.TeleBot(TOKEN, exception_handler=ExceptionHandler())
 MIN_IGNORE_TIME = 80000
 MAX_IGNORE_TIME = 700000
 MIN_ALLOWED_HOUR = 13
 MAX_ALLOWED_HOUR = 21
-
-
-def update_groups(load=False):
-    global groups
-    global groups_str
-    with open("groups.txt", "r+", encoding="utf-8") as groups_file:
-        if load:
-            groups = [chat.split(':  ') for chat in groups_file.readlines()]
-        else:
-            groups_file.truncate()
-            groups_file.writelines(str(x) + ':  ' + str(y) for x, y in groups)
-    groups_str = ''.join('<pre>' + str(x) + '</pre>:  <b>' + str(y) + '</b>' for x, y in groups)
 
 
 def save():
@@ -56,6 +45,7 @@ def save():
     config.set('Dump', 'current_user', current_user)
     config.set('Dump', 'auto_start', json.dumps(auto_start))
     config.set('Dump', 'users', json.dumps(users))
+    config.set('Dump', 'groups', json.dumps(groups))
     config.set('Dump', 'active_chats', json.dumps(active_chats))
     config.set('Dump', 'active_goroda', json.dumps(active_goroda))
     config.set('Dump', 'current_letters', json.dumps(current_letters, ensure_ascii=False))
@@ -70,13 +60,9 @@ def save():
         config.write(file)
 
 
-groups = []
-groups_str = ""
-update_groups(True)
-
+is_local = config["Settings"]['is_local']
 ignore = json.loads(config["Settings"]['ignore'])
 ans = json.loads(config["Settings"]['ans'])
-ans_voice = json.loads(config["Settings"]['ans_voice'])
 images: dict = json.loads(config["Settings"]['images'])
 starts = json.loads(config["Settings"]['starts'])
 calls = json.loads(config["Settings"]['calls'])
@@ -88,6 +74,7 @@ current_chat = config["Dump"]['current_chat']
 current_user = config["Dump"]['current_user']
 auto_start: dict = json.loads(config["Dump"]['auto_start'])
 users = json.loads(config["Dump"]['users'])
+groups = json.loads(config["Dump"]['groups'])
 active_chats: list = json.loads(config["Dump"]['active_chats'])
 active_goroda: list = json.loads(config["Dump"]['active_goroda'])
 current_letters = json.loads(config["Dump"]['current_letters'])
@@ -236,6 +223,33 @@ def parse_chat(chat: telebot.types.Chat):
     return text
 
 
+def get_available(exist_images, results, is_groups, start_index=0):
+    index = 0
+    for g in groups if is_groups else users:
+        index += 1
+        current = bot.get_chat(g)
+        if current.photo is None:
+            thumb_url = None
+        else:
+            photo_id = current.photo.small_file_id
+            file_name = photo_id + ".jpg"
+            image_url = "static/" + file_name
+            if is_local:
+                if file_name not in exist_images:
+                    requests.post(global_url + "upload/" + file_name,
+                                  data=bot.download_file(bot.get_file(photo_id).file_path))
+            else:
+                if not os.path.exists(image_url):
+                    with open(image_url, 'wb') as new_photo:
+                        new_photo.write(bot.download_file(bot.get_file(photo_id).file_path))
+            thumb_url = global_url + image_url
+        results.append(telebot.types.InlineQueryResultArticle(
+            index + start_index, current.title if is_groups else current.first_name + n(current.last_name, " "),
+            telebot.types.InputTextMessageContent("/chat " + g), description=(n(current.description)
+            if is_groups else n(current.bio)) + "\nНажмите, чтобы написать в этот чат", thumb_url=thumb_url))
+    return index
+
+
 @bot.message_handler(content_types=content_types)
 def chatting(msg: telebot.types.Message):
     global current_chat
@@ -255,7 +269,7 @@ def chatting(msg: telebot.types.Message):
             new_group = True
         else:
             for g in groups:
-                if g[0] == str(msg.chat.id):
+                if g == str(msg.chat.id):
                     break
             else:
                 new_group = True
@@ -266,22 +280,14 @@ def chatting(msg: telebot.types.Message):
             bot.send_message(admin_chat,
                              "<b>Новая группа: " + msg.chat.title + "  <pre>" + str(msg.chat.id) + "</pre></b>",
                              'HTML', reply_markup=markup)
-            groups.append([str(msg.chat.id), msg.chat.title + '\n'])
-            update_groups()
+            groups.append(str(msg.chat.id))
+            save()
             return
-    if msg.content_type == "new_chat_title":
-        for g in groups:
-            if g[0] == str(msg.chat.id):
-                g[1] = msg.chat.title + '\n'
+    if msg.content_type == "migrate_to_chat_id":
+        for g in range(len(groups)):
+            if groups[g] == str(msg.chat.id):
+                groups[g] = str(msg.migrate_to_chat_id)
                 break
-        update_groups()
-        return
-    elif msg.content_type == "migrate_to_chat_id":
-        for g in groups:
-            if g[0] == str(msg.chat.id):
-                g[0] = str(msg.migrate_to_chat_id)
-                break
-        update_groups()
         try:
             ignore[ignore.index(str(msg.chat.id))] = str(msg.migrate_to_chat_id)
         except ValueError:
@@ -411,20 +417,17 @@ def chatting(msg: telebot.types.Message):
         get_id(msg)
         return
 
-    # groups
-    elif current.startswith("/groups"):
-        bot.send_message(msg.chat.id, "<i>Группы, в которых состоит Козловский:</i>\n"
-                                      "<b>Чтобы скопировать chat_id, нажмите на него.</b>\n\n" + groups_str, 'HTML')
-        return
-
     # chat228
     elif current.startswith("/chat"):
         if len(args) == 1:
             bot.send_message(msg.chat.id,
-                             "Использование: /chat chat_id \n"
-                             "chat_id - id чата, с которым ты будешь общаться от имени Козловского. \n"
-                             "/id - получить chat_id человека. \n"
-                             "/groups - получить chat_id группы.")
+                             "Использование: /chat <b>chat_id</b> \n"
+                             "<i>chat_id</i> - id чата, с которым ты будешь общаться от имени Козловского. \n"
+                             "/id - получить <i>chat_id</i> <b>любого</b> человека.\n"
+                             "Нажмите кнопку для выбора возможных чатов", "HTML",
+                             reply_markup=telebot.types.InlineKeyboardMarkup()
+                             .add(telebot.types.InlineKeyboardButton(text="Выбрать чат",
+                                                                     switch_inline_query_current_chat="")))
             return
         start_chat(str(msg.chat.id), args[1])
     else:
@@ -578,20 +581,10 @@ def on_edit(msg: telebot.types.Message):
 
 @bot.inline_handler(None)
 def query_photo(inline_query):
-    try:
-        current = bot.get_chat(groups[0][0])
-        photo_id = current.photo.small_file_id
-        image_url = "static/" + photo_id + ".jpg"
-        if not os.path.exists(image_url):
-            with open(image_url, 'wb') as new_photo:
-                new_photo.write(bot.download_file(bot.get_file(photo_id).file_path))
-        r = telebot.types.InlineQueryResultArticle('1', current.title,
-                                                   telebot.types.InputTextMessageContent("/chat " + groups[0][0]),
-                                                   description=current.description,
-                                                   thumb_url="https://Kozlovskiy.comrsmaster.repl.co/" + image_url)
-        bot.answer_inline_query(inline_query.id, [r])
-    except Exception as e:
-        print(e)
+    results = []
+    exist_images = requests.get(global_url + "check").json()["images"]
+    get_available(exist_images, results, False, get_available(exist_images, results, True))
+    bot.answer_inline_query(inline_query.id, results)
 
 
 def timer():

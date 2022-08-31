@@ -1,6 +1,6 @@
 from threading import Thread
 
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 
 app = Flask('')
 
@@ -8,6 +8,13 @@ app = Flask('')
 @app.route('/')
 def home():
     return render_template('index.html')
+
+
+@app.route('/upload/<file_id>', methods=['POST'])
+def user(file_id):
+    if request.method == 'POST':
+        with open("static/" + file_id + ".jpg", 'wb') as new_photo:
+            new_photo.write(request.data)
 
 
 def run():
