@@ -23,13 +23,14 @@ class ExceptionHandler(telebot.ExceptionHandler):
             os._exit(0)
 
 
-content_types = ["text", "audio", "document", "photo", "sticker", "video", "video_note", "voice", "location", "contact",
-                 "new_chat_title", "group_chat_created", "supergroup_chat_created", "channel_chat_created",
-                 "migrate_to_chat_id", "poll"]
+content_types = ["text", "audio", "document", "photo", "sticker", "video", "video_note", "voice", "location",
+                 "contact", "new_chat_title", "group_chat_created", "supergroup_chat_created",
+                 "channel_chat_created", "migrate_to_chat_id", "poll"]
 admin_chat = "-1001624831175"
 config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
 TOKEN = os.getenv("Kozlovskiy_token")
+imgbb_token = os.getenv("imgbb_token")
 bot = telebot.TeleBot(TOKEN, exception_handler=ExceptionHandler())
 MIN_IGNORE_TIME = 80000
 MAX_IGNORE_TIME = 700000
@@ -186,8 +187,7 @@ def ai_talk(chat_id: str, msg_text, args, is_private=True, auto_answer=""):
 
 def photo_search(chat_id, search_photo):
     bot.send_chat_action(chat_id, action="typing")
-    url_pic = "https://yandex.ru/images/search?rpt=imageview&url=https://api.telegram.org/file/bot" + \
-              TOKEN + "/" + bot.get_file(search_photo.file_id).file_path
+    url_pic = "https://yandex.ru/images/search?rpt=imageview&url=" + bot.get_file_url(search_photo.file_id)
     soup = BeautifulSoup(requests.get(url_pic).text, 'lxml')
     results_vk = soup.find('div', class_='CbirSites-ItemInfo')
     if 'vk.com/id' in results_vk.find('a').get('href'):
@@ -229,7 +229,7 @@ def parse_chat(chat: telebot.types.Chat):
             text += n(str(bot.get_chat_member_count(chat.id)), '\n<b>Участников:</b> ')
             text += "\n<b>Админы:</b> "
             for m in bot.get_chat_administrators(chat.id):
-                text += '\n\n<b><a href="tg://user?id=' + str(m.user.id) + '">' + m.user.first_name +\
+                text += '\n\n<b><a href="tg://user?id=' + str(m.user.id) + '">' + m.user.first_name + \
                         '</a></b> <pre>' + str(m.user.id) + '</pre> ' + n(m.user.username, '\n@')
 
         except telebot.apihelper.ApiTelegramException:
@@ -494,7 +494,7 @@ def chatting(msg: telebot.types.Message):
                         bot.send_message(msg.chat.id, random_city)
                         current_letters[index] = get_city_letter(random_city)
                         save()
-                    except IndexError:
+                    except KeyError:
                         bot.send_message(msg.chat.id, "<b>Невозможно сгенерировать город</b>")
                 else:
                     bot.send_message(msg.chat.id, f"<b>Слово должно начинаться на букву:</b>  "
@@ -575,6 +575,24 @@ def on_edit(msg: telebot.types.Message):
                               chat_msg_my[other_index][chat_msg_pen[other_index].index(msg.id)])
     except ValueError:
         pass
+
+
+@bot.inline_handler(None)
+def query_photo(inline_query):
+    try:
+        current = bot.get_chat(groups[0][0])
+        photo_id = current.photo.small_file_id
+        image_url = "static/" + photo_id + ".jpg"
+        if not os.path.exists(image_url):
+            with open(image_url, 'wb') as new_photo:
+                new_photo.write(bot.download_file(bot.get_file(photo_id).file_path))
+        r = telebot.types.InlineQueryResultArticle('1', current.title,
+                                                   telebot.types.InputTextMessageContent("/chat " + groups[0][0]),
+                                                   description=current.description,
+                                                   thumb_url="https://Kozlovskiy.comrsmaster.repl.co/" + image_url)
+        bot.answer_inline_query(inline_query.id, [r])
+    except Exception as e:
+        print(e)
 
 
 def timer():
