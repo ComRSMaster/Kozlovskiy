@@ -36,10 +36,7 @@ def ping():
         time.sleep(120)
 
 
-def keep_alive():
+def keep_alive(is_local):
     Thread(target=run).start()
-    Thread(target=ping).start()
-
-
-if __name__ == "__main__":
-    keep_alive()
+    if is_local:
+        Thread(target=ping).start()
