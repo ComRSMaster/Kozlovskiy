@@ -1,9 +1,12 @@
 from threading import Thread
 import os
+import requests
+import time
 
 from flask import Flask, render_template, request
 
 app = Flask('')
+url = "https://Kozlovskiy.comrsmaster.repl.co/"
 
 
 @app.route('/')
@@ -27,9 +30,15 @@ def run():
     app.run(host='0.0.0.0', port=8080)
 
 
+def ping():
+    while True:
+        requests.head(url)
+        time.sleep(120)
+
+
 def keep_alive():
-    t = Thread(target=run)
-    t.start()
+    Thread(target=run).start()
+    Thread(target=ping).start()
 
 
 if __name__ == "__main__":

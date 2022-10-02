@@ -38,7 +38,6 @@ content_types = [
 admin_chat = "-1001624831175"
 config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
-global_url = "https://Kozlovskiy.comrsmaster.repl.co/"
 TOKEN = os.getenv("Kozlovskiy_token")
 bot = telebot.TeleBot(TOKEN, exception_handler=ExceptionHandler())
 
@@ -75,6 +74,7 @@ ignore = json.loads(config["Settings"]['ignore'])
 ans = json.loads(config["Settings"]['ans'])
 starts = json.loads(config["Settings"]['starts'])
 calls = json.loads(config["Settings"]['calls'])
+calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
 searches = json.loads(config["Settings"]['searches'])
 randoms = json.loads(config["Settings"]['randoms'])
@@ -159,7 +159,7 @@ def set_next_time(chat_id: str):
 def ai_talk(chat_id: str, msg_text, args, is_private=True, auto_answer=""):
     try:
         msgs = ai_datas[chat_id]
-        if not is_private and any(s in args for s in ends):
+        if any(s in args for s in ends):
             ai_datas.pop(chat_id)
             bot.send_message(chat_id, "Пока")
             save()
@@ -180,7 +180,7 @@ def ai_talk(chat_id: str, msg_text, args, is_private=True, auto_answer=""):
             ai_datas[chat_id] = msgs[-20:]
             save()
     except KeyError:
-        if is_private or any(s in args for s in calls):
+        if any(s in args for s in calls) or (is_private and any(s in args for s in calls_private)):
             ai_datas.setdefault(chat_id, [])
             ai_talk(chat_id, msg_text, args, is_private, auto_answer)
             save()
@@ -253,13 +253,13 @@ def get_available(exist_images, results, is_groups, start_index=0):
             image_url = "static/" + file_name
             if is_local:
                 if file_name not in exist_images:
-                    requests.post(global_url + "upload/" + file_name, data=bot.download_file(
+                    requests.post(webserver.url + "upload/" + file_name, data=bot.download_file(
                         bot.get_file(photo_id).file_path))
             else:
                 if not os.path.exists(image_url):
                     with open(image_url, 'wb') as new_photo:
                         new_photo.write(bot.download_file(bot.get_file(photo_id).file_path))
-            thumb_url = global_url + image_url
+            thumb_url = webserver.url + image_url
         results.append(
             telebot.types.InlineQueryResultArticle(
                 index + start_index,
@@ -502,6 +502,7 @@ def chatting(msg: telebot.types.Message):
         if any(s in current for s in searches):
             try:
                 photo_search(msg.chat.id, msg.photo[-1])
+                return
             except (TypeError, AttributeError):
                 try:
                     photo_search(msg.chat.id, msg.reply_to_message.photo[-1])
@@ -613,7 +614,7 @@ def on_edit(msg: telebot.types.Message):
 @bot.inline_handler(None)
 def query_photo(inline_query):
     results = []
-    exist_images = requests.get(global_url + "check").json()["images"] if is_local else None
+    exist_images = requests.get(webserver.url + "check").json()["images"] if is_local else None
     get_available(exist_images, results, False, get_available(exist_images, results, True))
     bot.answer_inline_query(inline_query.id, results)
 
