@@ -33,7 +33,7 @@ def run():
 def ping():
     while True:
         requests.head(url)
-        time.sleep(120)
+        time.sleep(150)
 
 
 def keep_alive(is_local):

@@ -3,3 +3,4 @@ Flask
 tzdata
 pyTelegramBotAPI
 requests
+vosk

@@ -1,13 +1,16 @@
 import configparser
 import json
 import os
+import random
+import subprocess
 import sys
 import time
 import traceback
+import wave
 from datetime import datetime
-import random
 
 import requests
+import vosk
 
 if sys.version_info < (3, 9):
     # noinspection PyUnresolvedReferences,PyPackageRequirements
@@ -24,7 +27,6 @@ from bs4 import BeautifulSoup
 
 is_local = util.find_spec("replit") is None
 del util
-del sys
 
 content_types = [
     "text", "audio", "document", "photo", "sticker", "video", "video_note",
@@ -32,11 +34,7 @@ content_types = [
     "supergroup_chat_created", "channel_chat_created", "migrate_to_chat_id", "poll"]
 config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
-MIN_IGNORE_TIME = config.getint("Settings", "MIN_IGNORE_TIME")
-MAX_IGNORE_TIME = config.getint("Settings", "MAX_IGNORE_TIME")
 MIN_BIRTHDAY_HOUR = config.getint("Settings", "MIN_BIRTHDAY_HOUR")
-MIN_ALLOWED_HOUR = config.getint("Settings", "MIN_ALLOWED_HOUR")
-MAX_ALLOWED_HOUR = config.getint("Settings", "MAX_ALLOWED_HOUR")
 admin_chat = json.loads(config["Settings"]['admin_chat'])
 success_vid = json.loads(config["Settings"]['success_vid'])
 starts = json.loads(config["Settings"]['starts'])
@@ -45,43 +43,49 @@ calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
 searches = json.loads(config["Settings"]['searches'])
 randoms = json.loads(config["Settings"]['randoms'])
-ignore: list = json.loads(config["Dump"]['ignore'])
-images: dict = json.loads(config["Dump"]['images'])
-current_chat = config["Dump"]['current_chat']
-auto_start: dict = json.loads(config["Dump"]['auto_start'])
-users = json.loads(config["Dump"]['users'])
-groups = json.loads(config["Dump"]['groups'])
-birthdays: dict = json.loads(config["Dump"]['birthdays'])
-active_goroda: list = json.loads(config["Dump"]['active_goroda'])
-current_letters = json.loads(config["Dump"]['current_letters'])
-wait_for_chat_id = json.loads(config["Dump"]['wait_for_chat_id'])
-chat_id_my = json.loads(config["Dump"]['chat_id_my'])
-chat_id_pen: list = json.loads(config["Dump"]['chat_id_pen'])
-chat_msg_my = json.loads(config["Dump"]['chat_msg_my'])
-chat_msg_pen = json.loads(config["Dump"]['chat_msg_pen'])
-current_users = json.loads(config["Dump"]['current_users'])
-ai_datas: dict = json.loads(config["Dump"]['ai_datas'])
+
+with open('db.json', encoding="utf-8") as db_file:
+    db = json.load(db_file)
+
+ignore: list = db['ignore']
+images: dict = db['images']
+current_chat = db['current_chat']
+users = db['users']
+groups = db['groups']
+birthdays: dict = db['birthdays']
+active_goroda: list = db['active_goroda']
+current_letters = db['current_letters']
+wait_for_chat_id = db['wait_for_chat_id']
+chat_id_my = db['chat_id_my']
+chat_id_pen: list = db['chat_id_pen']
+chat_msg_my = db['chat_msg_my']
+chat_msg_pen = db['chat_msg_pen']
+current_users = db['current_users']
+ai_datas: dict = db['ai_datas']
+
+samplerate = 48000
+stt_model = vosk.Model("model_small")
+rec = vosk.KaldiRecognizer(stt_model, samplerate)
 
 
 def save():
-    config.set('Dump', 'ignore', json.dumps(ignore))
-    config.set('Dump', 'images', json.dumps(images))
-    config.set('Dump', 'current_chat', current_chat)
-    config.set('Dump', 'auto_start', json.dumps(auto_start))
-    config.set('Dump', 'users', json.dumps(users))
-    config.set('Dump', 'groups', json.dumps(groups))
-    config.set('Dump', 'birthdays', json.dumps(birthdays))
-    config.set('Dump', 'active_goroda', json.dumps(active_goroda))
-    config.set('Dump', 'current_letters', json.dumps(current_letters, ensure_ascii=False))
-    config.set('Dump', 'wait_for_chat_id', json.dumps(wait_for_chat_id))
-    config.set('Dump', 'chat_id_my', json.dumps(chat_id_my))
-    config.set('Dump', 'chat_id_pen', json.dumps(chat_id_pen))
-    config.set('Dump', 'chat_msg_my', json.dumps(chat_msg_my))
-    config.set('Dump', 'chat_msg_pen', json.dumps(chat_msg_pen))
-    config.set('Dump', 'current_users', json.dumps(current_users))
-    config.set('Dump', 'ai_datas', json.dumps(ai_datas, ensure_ascii=False))
-    with open('config.ini', 'w', encoding="utf-8") as file:
-        config.write(file)
+    db['ignore'] = ignore
+    db['images'] = images
+    db['current_chat'] = current_chat
+    db['users'] = users
+    db['groups'] = groups
+    db['birthdays'] = birthdays
+    db['active_goroda'] = active_goroda
+    db['current_letters'] = current_letters
+    db['wait_for_chat_id'] = wait_for_chat_id
+    db['chat_id_my'] = chat_id_my
+    db['chat_id_pen'] = chat_id_pen
+    db['chat_msg_my'] = chat_msg_my
+    db['chat_msg_pen'] = chat_msg_pen
+    db['current_users'] = current_users
+    db['ai_datas'] = ai_datas
+    with open('db.json', 'w', encoding='utf-8') as db_file1:
+        json.dump(db, db_file1, ensure_ascii=False)
 
 
 with open('cities.json', encoding="utf-8") as f:
@@ -94,7 +98,7 @@ class ExceptionHandler(telebot.ExceptionHandler):
             print("Неправильный токен бота")
             # noinspection PyProtectedMember
             os._exit(0)
-        bot.send_message(admin_chat, "<b>ОШИБКА:</b>\n" + str(traceback.format_exc()), "HTML")
+        bot.send_message(admin_chat, "ОШИБКА:\n" + str(traceback.format_exc()))
 
 
 TOKEN = os.getenv("Kozlovskiy_token")
@@ -152,14 +156,8 @@ def get_city_letter(str_city, i=-1):
     return str_city[i - 1]
 
 
-def set_next_time(chat_id: str):
-    auto_start[chat_id] = int(datetime.now(ZoneInfo("Europe/Moscow")).timestamp()) + random.randint(
-        MIN_IGNORE_TIME, MAX_IGNORE_TIME)
-
-
-def ai_talk(chat_id: str, msg_text, args, is_private=True, auto_answer=""):
-    try:
-        msgs = ai_datas[chat_id]
+def ai_talk(chat_id: str, msg_text, args, is_private=True):
+    if chat_id in ai_datas:
         if any(s in args for s in ends):
             ai_datas.pop(chat_id)
             bot.send_message(chat_id, "Пока")
@@ -168,29 +166,22 @@ def ai_talk(chat_id: str, msg_text, args, is_private=True, auto_answer=""):
         if msg_text != "":
             bot.send_chat_action(chat_id, action="typing")
             ai_datas[chat_id].append(msg_text)
-            if auto_answer == "":
-                res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
-                                    json={"instances": [{"contexts": [msgs]}]}).json()
-                answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
-            else:
-                answer = auto_answer
-            if is_private and chat_id in auto_start:
-                set_next_time(chat_id)
-            bot.send_message(chat_id, answer, disable_notification=auto_answer != "")
+            res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
+                                json={"instances": [{"contexts": [ai_datas[chat_id]]}]}).json()
+            answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
+            bot.send_message(chat_id, answer)
             ai_datas[chat_id].append(answer)
-            ai_datas[chat_id] = msgs[-20:]
+            ai_datas[chat_id] = ai_datas[chat_id][-30:]
             save()
-    except KeyError:
-        if any(s in args for s in calls) or (is_private and any(s in args for s in calls_private)):
-            ai_datas.setdefault(chat_id, [])
-            ai_talk(chat_id, msg_text, args, is_private, auto_answer)
-            save()
+    elif any(s in args for s in calls) or (is_private and any(s in args for s in calls_private)):
+        ai_datas.setdefault(chat_id, [])
+        ai_talk(chat_id, msg_text, args, is_private)
+        save()
 
 
 def photo_search(chat_id, search_photo):
     bot.send_chat_action(chat_id, action="typing")
-    url_pic = "https://yandex.ru/images/search?rpt=imageview&url=" + bot.get_file_url(
-        search_photo.file_id)
+    url_pic = "https://yandex.ru/images/search?rpt=imageview&url=" + bot.get_file_url(search_photo.file_id)
     soup = BeautifulSoup(requests.get(url_pic).text, 'lxml')
     results_vk = soup.find('div', class_='CbirSites-ItemInfo')
     if 'vk.com/id' in results_vk.find('a').get('href'):
@@ -285,15 +276,6 @@ def timer():
             else:
                 birthdays[key][2] = 0
             save()
-
-        for key in auto_start:
-            if key in chat_id_my or key in wait_for_chat_id:
-                continue
-            if auto_start[key] <= now.timestamp() and MIN_ALLOWED_HOUR <= now.hour <= MAX_ALLOWED_HOUR:
-                bot.send_message(admin_chat, "Я написал: " + key)
-                bot.send_message(key, "<i>/ignore - запретить Козловскому самому начинать переписку</i>", "HTML",
-                                 disable_notification=True)
-                ai_talk(key, "Привет", ["привет"], auto_answer=random.choice(starts))
         time.sleep(1000)
 
 
@@ -313,5 +295,50 @@ def new_private_cr(chat_id: str):
         return
     users.append(chat_id)
     bot.send_video(chat_id, success_vid, caption="<b>Чем я могу помочь?</b>🤔", parse_mode="HTML")
-    set_next_time(chat_id)
     save()
+
+
+def audio_convert(file_id):
+    path = "cache/" + file_id
+    try:
+        with open(path + ".ogg", "xb") as n_f:
+            n_f.write(bot.download_file(bot.get_file(file_id).file_path))
+    except FileExistsError:
+        pass
+    command = [
+        f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'usr/bin/ffmpeg',
+        '-n', '-i', path + ".ogg",
+        '-acodec', 'pcm_s16le',
+        '-ac', '1',
+        '-ar', str(samplerate), path + ".wav"
+    ]
+    result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return path + ".wav"
+
+
+def stt(file_id, reply_to_message=None):
+    stats = reply_to_message is not None
+    progress_id = -1
+    if stats:
+        progress_id = bot.reply_to(reply_to_message, "Расшифровка: 0%").message_id
+    path = audio_convert(file_id)
+    if stats:
+        bot.edit_message_text("Расшифровка: 50%", reply_to_message.chat.id, progress_id)
+
+    wf = wave.open(path, "rb")
+    result = ''
+    while True:
+        data = wf.readframes(samplerate)
+        if len(data) == 0:
+            break
+        if rec.AcceptWaveform(data):
+            result += json.loads(rec.Result())['text']
+
+    res = json.loads(rec.FinalResult())
+    result += res['text']
+    if result == '':
+        result = "Тут ничего нет🤔"
+    if stats:
+        bot.edit_message_text(result, reply_to_message.chat.id, progress_id)
+
+    return result

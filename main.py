@@ -8,7 +8,7 @@ from tools import *
 @bot.message_handler(content_types=content_types)
 def chatting(msg: telebot.types.Message):
     current = str(n(msg.text) + n(msg.caption)).lower()
-    args = re.split(r'[ ,.;&!?\[\]]+', current)
+    args = re.split(r'[ ,.;&!?@\[\]]+', current)
     # chat management
     if msg.chat.type == "private":
         new_private_cr(str(msg.chat.id))
@@ -118,23 +118,6 @@ def chatting(msg: telebot.types.Message):
                 bot.send_message(msg.chat.id, "Я совершенно свободен")
                 return
 
-    # ignore
-    if current.startswith("/ignore"):
-        if msg.chat.type != "private":
-            bot.send_message(msg.chat.id, "<i>Эту команду можно использовать только в лс</i>", 'HTML')
-            return
-        try:
-            auto_start.pop(str(msg.chat.id))
-            bot.send_message(msg.chat.id,
-                             "<b>Теперь Козловский не будет начинать переписку сам.</b>\n"
-                             "<i>Чтобы вернуть всё как было, введите /ignore ещё раз.</i>",
-                             'HTML')
-        except KeyError:
-            set_next_time(str(msg.chat.id))
-            bot.send_message(msg.chat.id, "<b>Теперь Козловский сможет начать переписку сам</b>", 'HTML')
-        save()
-        return
-
     # delete
     elif current.startswith("/delete"):
         try:
@@ -150,6 +133,33 @@ def chatting(msg: telebot.types.Message):
             pass
         return
 
+    # decrypt voice/video messages
+    elif current.startswith("/d"):
+        file_id = None
+        if msg.content_type == "voice":
+            file_id = msg.voice.file_id
+        elif msg.content_type == "audio":
+            file_id = msg.audio.file_id
+        elif msg.content_type == "video_note":
+            file_id = msg.video_note.file_id
+        elif msg.content_type == "video":
+            file_id = msg.reply_to_message.video.file_id
+        elif msg.reply_to_message is not None:
+            if msg.reply_to_message.content_type == "voice":
+                file_id = msg.reply_to_message.voice.file_id
+            elif msg.reply_to_message.content_type == "audio":
+                file_id = msg.reply_to_message.audio.file_id
+            elif msg.reply_to_message.content_type == "video_note":
+                file_id = msg.reply_to_message.video_note.file_id
+            elif msg.reply_to_message.content_type == "video":
+                file_id = msg.reply_to_message.video.file_id
+        if file_id is None:
+            bot.send_message(msg.chat.id,
+                             "Ответьте на голосовое/видео сообщение этой командой /d, чтобы его расшифровать.")
+            return
+        bot.send_chat_action(msg.chat.id, action="typing")
+        Thread(target=stt, args=[file_id, msg.reply_to_message]).start()
+        return
     # id
     elif current.startswith("/id"):
         get_id(msg)
@@ -162,8 +172,7 @@ def chatting(msg: telebot.types.Message):
                 msg.chat.id, "Использование: /chat <b>chat_id</b> \n"
                              "<i>chat_id</i> - id чата, с которым ты будешь общаться от имени Козловского. \n"
                              "/id - получить <i>chat_id</i> <b>любого</b> человека.\n"
-                             "Нажмите кнопку для выбора возможных чатов",
-                "HTML",
+                             "Нажмите кнопку для выбора возможных чатов", "HTML",
                 reply_markup=telebot.types.InlineKeyboardMarkup().add(
                     telebot.types.InlineKeyboardButton(text="Выбрать чат", switch_inline_query_current_chat="")))
             return
@@ -183,9 +192,8 @@ def chatting(msg: telebot.types.Message):
         except ValueError:
             pass
         except telebot.apihelper.ApiTelegramException as err:
-            bot.send_message(msg.chat.id,
-                             "<b>Этому человеку невозможно написать через Козловского."
-                             "Он ещё не общался со мной.</b><i>(" + str(err.description) + ")</i>", 'HTML')
+            bot.send_message(msg.chat.id, "<b>Этому человеку невозможно написать через Козловского."
+                                          "Он ещё не общался со мной.</b><i>(" + str(err.description) + ")</i>", 'HTML')
 
     # fun
     if str(msg.chat.id) not in chat_id_my and str(msg.chat.id) not in wait_for_chat_id:
@@ -339,10 +347,6 @@ def ban_handler(member: telebot.types.ChatMemberUpdated):
         try:
             ignore.remove(str(member.chat.id))
         except ValueError:
-            pass
-        try:
-            auto_start.pop(str(member.chat.id))
-        except KeyError:
             pass
         try:
             birthdays.pop(str(member.chat.id))
