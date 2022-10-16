@@ -5,7 +5,7 @@ import time
 
 from flask import Flask, render_template, request
 
-app = Flask('')
+app = Flask('', static_url_path='')
 url = "https://Kozlovskiy.comrsmaster.repl.co/"
 
 
@@ -16,13 +16,13 @@ def home():
 
 @app.route('/check')
 def check():
-    return {"images": os.listdir("static/")}
+    return {"images": os.listdir("static/i/")}
 
 
 @app.route('/upload/<file_id>', methods=['POST'])
 def user(file_id):
     if request.method == 'POST':
-        with open("static/" + file_id + ".jpg", 'wb') as new_photo:
+        with open("static/i/" + file_id + ".jpg", 'wb') as new_photo:
             new_photo.write(request.data)
 
 
@@ -38,5 +38,5 @@ def ping():
 
 def keep_alive(is_local):
     Thread(target=run).start()
-    if is_local:
+    if not is_local:
         Thread(target=ping).start()

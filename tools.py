@@ -21,8 +21,8 @@ else:
 from importlib import util
 
 import telebot
+import torch
 
-import webserver
 from bs4 import BeautifulSoup
 
 is_local = util.find_spec("replit") is None
@@ -43,6 +43,7 @@ calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
 searches = json.loads(config["Settings"]['searches'])
 randoms = json.loads(config["Settings"]['randoms'])
+samplerate = 48000
 
 with open('db.json', encoding="utf-8") as db_file:
     db = json.load(db_file)
@@ -50,12 +51,10 @@ with open('db.json', encoding="utf-8") as db_file:
 ignore: list = db['ignore']
 images: dict = db['images']
 current_chat = db['current_chat']
-users = db['users']
-groups = db['groups']
+users: dict[str, dict] = db['users']
 birthdays: dict = db['birthdays']
 active_goroda: list = db['active_goroda']
 current_letters = db['current_letters']
-wait_for_chat_id = db['wait_for_chat_id']
 chat_id_my = db['chat_id_my']
 chat_id_pen: list = db['chat_id_pen']
 chat_msg_my = db['chat_msg_my']
@@ -63,9 +62,19 @@ chat_msg_pen = db['chat_msg_pen']
 current_users = db['current_users']
 ai_datas: dict = db['ai_datas']
 
-samplerate = 48000
-stt_model = vosk.Model("model_small")
-rec = vosk.KaldiRecognizer(stt_model, samplerate)
+rec = None
+tts_model = None
+
+
+def load_ai():
+    global rec
+    global tts_model
+    rec = vosk.KaldiRecognizer(vosk.Model("model_small"), samplerate)
+    torch.set_num_threads(4)
+    # noinspection PyUnresolvedReferences
+    tts_model = torch.package.PackageImporter('tts-model.pt').load_pickle("tts_models", "model")
+    tts_model.to(torch.device('cpu'))
+    print("ai loaded")
 
 
 def save():
@@ -73,11 +82,9 @@ def save():
     db['images'] = images
     db['current_chat'] = current_chat
     db['users'] = users
-    db['groups'] = groups
     db['birthdays'] = birthdays
     db['active_goroda'] = active_goroda
     db['current_letters'] = current_letters
-    db['wait_for_chat_id'] = wait_for_chat_id
     db['chat_id_my'] = chat_id_my
     db['chat_id_pen'] = chat_id_pen
     db['chat_msg_my'] = chat_msg_my
@@ -106,10 +113,9 @@ bot = telebot.TeleBot(TOKEN, exception_handler=ExceptionHandler())
 
 
 def get_id(message):
-    wait_for_chat_id.append(str(message.chat.id))
-    bot.send_message(
-        message.chat.id, "Теперь перешли мне любое сообщение из чата, "
-                         "или поделись со мной контактом этого человека.\n /cancel - отмена")
+    users[str(message.chat.id)]["getting_id"] = 1
+    bot.send_message(message.chat.id, "Теперь перешли мне любое сообщение из чата, "
+                                      "или поделись со мной контактом этого человека.\n /cancel - отмена")
     save()
 
 
@@ -156,26 +162,30 @@ def get_city_letter(str_city, i=-1):
     return str_city[i - 1]
 
 
-def ai_talk(chat_id: str, msg_text, args, is_private=True):
+def ai_talk(chat_id: str, msg_text, voice_id, args, is_private=True):
     if chat_id in ai_datas:
         if any(s in args for s in ends):
             ai_datas.pop(chat_id)
             bot.send_message(chat_id, "Пока")
             save()
             return
+        is_voice = voice_id is not None
+        if is_voice:
+            bot.send_chat_action(chat_id, action="record_voice")
+            msg_text = stt(voice_id) + ("\n" + msg_text) if msg_text != "" else ""
         if msg_text != "":
-            bot.send_chat_action(chat_id, action="typing")
             ai_datas[chat_id].append(msg_text)
             res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
                                 json={"instances": [{"contexts": [ai_datas[chat_id]]}]}).json()
             answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
+
             bot.send_message(chat_id, answer)
             ai_datas[chat_id].append(answer)
             ai_datas[chat_id] = ai_datas[chat_id][-30:]
             save()
     elif any(s in args for s in calls) or (is_private and any(s in args for s in calls_private)):
         ai_datas.setdefault(chat_id, [])
-        ai_talk(chat_id, msg_text, args, is_private)
+        ai_talk(chat_id, msg_text, voice_id, args, is_private)
         save()
 
 
@@ -232,37 +242,6 @@ def parse_chat(chat: telebot.types.Chat):
     return text
 
 
-def get_available(exist_images, results, is_groups, start_index=0):
-    index = 0
-    for g in groups if is_groups else users:
-        index += 1
-        current = bot.get_chat(g)
-        if current.photo is None:
-            thumb_url = None
-        else:
-            photo_id = current.photo.small_file_id
-            file_name = photo_id + ".jpg"
-            image_url = "static/" + file_name
-            if is_local:
-                if file_name not in exist_images:
-                    requests.post(webserver.url + "upload/" + file_name, data=bot.download_file(
-                        bot.get_file(photo_id).file_path))
-            else:
-                if not os.path.exists(image_url):
-                    with open(image_url, 'wb') as new_photo:
-                        new_photo.write(bot.download_file(bot.get_file(photo_id).file_path))
-            thumb_url = webserver.url + image_url
-        results.append(
-            telebot.types.InlineQueryResultArticle(
-                index + start_index,
-                current.title if is_groups else current.first_name + n(current.last_name, " "),
-                telebot.types.InputTextMessageContent("/chat " + g),
-                description=(n(current.description) if is_groups else n(
-                    current.bio)) + "\nНажмите, чтобы написать в этот чат",
-                thumb_url=thumb_url))
-    return index
-
-
 def timer():
     while True:
         now = datetime.now(ZoneInfo("Europe/Moscow"))
@@ -280,65 +259,113 @@ def timer():
 
 
 def new_group_cr(chat_id: str, title):
-    if chat_id in groups:
+    if users.get(chat_id) is not None:
         return
     markup = telebot.types.InlineKeyboardMarkup()
     markup.add(telebot.types.InlineKeyboardButton(text="Ignore", callback_data="btn_ignore_" + chat_id))
     bot.send_message(admin_chat, "<b>Новая группа: " + title + "  <pre>" +
                      chat_id + "</pre></b>", 'HTML', reply_markup=markup)
-    groups.append(chat_id)
+    users[chat_id] = {}
     save()
 
 
 def new_private_cr(chat_id: str):
-    if chat_id in users:
+    if users.get(chat_id) is not None:
         return
-    users.append(chat_id)
+    users[chat_id] = {}
     bot.send_video(chat_id, success_vid, caption="<b>Чем я могу помочь?</b>🤔", parse_mode="HTML")
     save()
 
 
-def audio_convert(file_id):
-    path = "cache/" + file_id
-    try:
-        with open(path + ".ogg", "xb") as n_f:
-            n_f.write(bot.download_file(bot.get_file(file_id).file_path))
-    except FileExistsError:
-        pass
-    command = [
-        f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'usr/bin/ffmpeg',
-        '-n', '-i', path + ".ogg",
-        '-acodec', 'pcm_s16le',
-        '-ac', '1',
-        '-ar', str(samplerate), path + ".wav"
-    ]
-    result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return path + ".wav"
+def get_voice_id(msg: telebot.types.Message):
+    file_id = None
+    if msg.content_type == "voice":
+        file_id = msg.voice.file_id
+    elif msg.content_type == "audio":
+        file_id = msg.audio.file_id
+    elif msg.content_type == "video_note":
+        file_id = msg.video_note.file_id
+    elif msg.content_type == "video":
+        file_id = msg.reply_to_message.video.file_id
+    elif msg.reply_to_message is not None:
+        if msg.reply_to_message.content_type == "voice":
+            file_id = msg.reply_to_message.voice.file_id
+        elif msg.reply_to_message.content_type == "audio":
+            file_id = msg.reply_to_message.audio.file_id
+        elif msg.reply_to_message.content_type == "video_note":
+            file_id = msg.reply_to_message.video_note.file_id
+        elif msg.reply_to_message.content_type == "video":
+            file_id = msg.reply_to_message.video.file_id
+    return file_id
 
 
 def stt(file_id, reply_to_message=None):
+    global rec
     stats = reply_to_message is not None
     progress_id = -1
     if stats:
         progress_id = bot.reply_to(reply_to_message, "Расшифровка: 0%").message_id
-    path = audio_convert(file_id)
+
+    path = "cache/" + file_id
+    if not os.path.exists(path + ".wav"):
+        try:
+            with open(path + ".ogg", "xb") as n_f:
+                n_f.write(bot.download_file(bot.get_file(file_id).file_path))
+        except FileExistsError:
+            pass
+        command = [
+            f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'usr/bin/ffmpeg',
+            '-n', '-i', path + ".ogg",
+            '-acodec', 'pcm_s16le',
+            '-ac', '1',
+            '-ar', str(samplerate), path + ".wav"
+        ]
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.remove(path + ".ogg")
+
     if stats:
         bot.edit_message_text("Расшифровка: 50%", reply_to_message.chat.id, progress_id)
-
-    wf = wave.open(path, "rb")
+    wf = wave.open(path + ".wav", "rb")
     result = ''
+    while rec is None:
+        time.sleep(0.5)
     while True:
         data = wf.readframes(samplerate)
         if len(data) == 0:
             break
+        rec: vosk.KaldiRecognizer
         if rec.AcceptWaveform(data):
             result += json.loads(rec.Result())['text']
 
     res = json.loads(rec.FinalResult())
     result += res['text']
     if result == '':
-        result = "Тут ничего нет🤔"
+        result = "Тут ничего нет🤔" if stats else "Скажи что-нибудь"
     if stats:
         bot.edit_message_text(result, reply_to_message.chat.id, progress_id)
 
     return result
+
+
+def tts(text: str):
+    voice_name = f"{datetime.microsecond}.wav"
+    while tts_model is None:
+        time.sleep(0.5)
+    # noinspection PyUnresolvedReferences
+    tts_model.save_wav(text=text,
+                       speaker='eugene',
+                       audio_path=voice_name,
+                       sample_rate=samplerate)
+
+    path = "cache/" + voice_name
+    command = [
+        f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'usr/bin/ffmpeg',
+        '-n', '-i', path + ".ogg",
+        '-c', 'a libopus',
+        path + ".wav"
+    ]
+    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.remove(voice_name)
+    with open(path + ".ogg", "xb") as n_f:
+        return
+

@@ -1,8 +1,9 @@
 .idea/
 __pycache__/
-static/
+static/i/
 venv/
 .replit
 replit.nix
 cache/
 ffmpeg.exe
+db.json

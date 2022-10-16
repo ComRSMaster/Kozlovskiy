@@ -4,3 +4,4 @@ tzdata
 pyTelegramBotAPI
 requests
 vosk
+torch

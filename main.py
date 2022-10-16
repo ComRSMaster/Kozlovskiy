@@ -2,6 +2,7 @@ import re
 from threading import Thread
 
 import tools
+import webserver
 from tools import *
 
 
@@ -16,10 +17,7 @@ def chatting(msg: telebot.types.Message):
         if msg.content_type in ["group_chat_created", "supergroup_chat_created", "channel_chat_created"]:
             new_group_cr(str(msg.chat.id), msg.chat.title)
     if msg.content_type == "migrate_to_chat_id":
-        for g in range(len(groups)):
-            if groups[g] == str(msg.chat.id):
-                groups[g] = str(msg.migrate_to_chat_id)
-                break
+        users[str(msg.migrate_to_chat_id)] = users.pop(str(msg.chat.id))
         try:
             ignore[ignore.index(str(msg.chat.id))] = str(msg.migrate_to_chat_id)
         except ValueError:
@@ -74,7 +72,7 @@ def chatting(msg: telebot.types.Message):
     except ValueError:
         pass
 
-    if str(msg.chat.id) in wait_for_chat_id:
+    if users[str(msg.chat.id)].get("getting_id", 0):
         markup = telebot.types.InlineKeyboardMarkup()
         if msg.content_type == 'contact':
             user_id = str(msg.contact.user_id)
@@ -93,17 +91,15 @@ def chatting(msg: telebot.types.Message):
                 return
             except AttributeError:
                 pass
-        wait_for_chat_id.remove(str(msg.chat.id))
+        users[str(msg.chat.id)].pop("getting_id")
         save()
 
     # cancel
     if current.startswith("/cancel"):
-        try:
-            wait_for_chat_id.remove(str(msg.chat.id))
+        if users[str(msg.chat.id)].pop("getting_id", 0) != 0:
             bot.send_message(msg.chat.id, "Всё отменяю")
             save()
-            return
-        except ValueError:
+        else:
             try:
                 my_index = chat_id_my.index(str(msg.chat.id))
                 chat_id_my.pop(my_index)
@@ -113,10 +109,9 @@ def chatting(msg: telebot.types.Message):
                 current_users.pop(my_index)
                 bot.send_message(msg.chat.id, "Конец переписки")
                 save()
-                return
             except ValueError:
                 bot.send_message(msg.chat.id, "Я совершенно свободен")
-                return
+        return
 
     # delete
     elif current.startswith("/delete"):
@@ -135,24 +130,7 @@ def chatting(msg: telebot.types.Message):
 
     # decrypt voice/video messages
     elif current.startswith("/d"):
-        file_id = None
-        if msg.content_type == "voice":
-            file_id = msg.voice.file_id
-        elif msg.content_type == "audio":
-            file_id = msg.audio.file_id
-        elif msg.content_type == "video_note":
-            file_id = msg.video_note.file_id
-        elif msg.content_type == "video":
-            file_id = msg.reply_to_message.video.file_id
-        elif msg.reply_to_message is not None:
-            if msg.reply_to_message.content_type == "voice":
-                file_id = msg.reply_to_message.voice.file_id
-            elif msg.reply_to_message.content_type == "audio":
-                file_id = msg.reply_to_message.audio.file_id
-            elif msg.reply_to_message.content_type == "video_note":
-                file_id = msg.reply_to_message.video_note.file_id
-            elif msg.reply_to_message.content_type == "video":
-                file_id = msg.reply_to_message.video.file_id
+        file_id = get_voice_id(msg)
         if file_id is None:
             bot.send_message(msg.chat.id,
                              "Ответьте на голосовое/видео сообщение этой командой /d, чтобы его расшифровать.")
@@ -196,7 +174,7 @@ def chatting(msg: telebot.types.Message):
                                           "Он ещё не общался со мной.</b><i>(" + str(err.description) + ")</i>", 'HTML')
 
     # fun
-    if str(msg.chat.id) not in chat_id_my and str(msg.chat.id) not in wait_for_chat_id:
+    if str(msg.chat.id) not in chat_id_my:
         # random
         if any(s in args for s in randoms):
             start_num = 1
@@ -258,7 +236,7 @@ def chatting(msg: telebot.types.Message):
                 save()
                 return
         # ai talk
-        ai_talk(str(msg.chat.id), n(msg.text) + n(msg.caption), args, msg.chat.type == "private")
+        ai_talk(str(msg.chat.id), n(msg.text) + n(msg.caption), get_voice_id(msg), args, msg.chat.type == "private")
 
 
 @bot.callback_query_handler(func=lambda call: 'btn' in call.data)
@@ -332,18 +310,37 @@ def on_edit(msg: telebot.types.Message):
 def query_photo(inline_query):
     results = []
     exist_images = requests.get(webserver.url + "check").json()["images"] if is_local else None
-    get_available(exist_images, results, False, get_available(exist_images, results, True))
+    index = 0
+    for user in users:
+        index += 1
+        current = bot.get_chat(user)
+        if current.photo is None:
+            thumb_url = None
+        else:
+            photo_id = current.photo.small_file_id
+            file_name = photo_id + ".jpg"
+            image_url = "i/" + file_name
+            if is_local:
+                if file_name not in exist_images:
+                    requests.post(webserver.url + "upload/" + photo_id, data=bot.download_file(
+                        bot.get_file(photo_id).file_path))
+            else:
+                if not os.path.exists(image_url):
+                    with open(image_url, 'wb') as new_photo:
+                        new_photo.write(bot.download_file(bot.get_file(photo_id).file_path))
+            thumb_url = webserver.url + image_url
+        results.append(telebot.types.InlineQueryResultArticle(
+            index, current.title if current.type != "private" else current.first_name + n(current.last_name, " "),
+            telebot.types.InputTextMessageContent("/chat " + user),
+            description=(n(current.description) if current.type != "private" else n(
+                current.bio)) + "\nНажмите, чтобы написать в этот чат", thumb_url=thumb_url))
     bot.answer_inline_query(inline_query.id, results)
 
 
 @bot.my_chat_member_handler(None)
 def ban_handler(member: telebot.types.ChatMemberUpdated):
     if member.new_chat_member.status in ["restricted", "kicked"]:
-        if member.chat.type == "private":
-            users.remove(str(member.chat.id))
-        else:
-            groups.remove(str(member.chat.id))
-
+        users.pop(str(member.chat.id))
         try:
             ignore.remove(str(member.chat.id))
         except ValueError:
@@ -367,7 +364,7 @@ def ban_handler(member: telebot.types.ChatMemberUpdated):
 
 # Запуск бота
 webserver.keep_alive(is_local)
-timer_thread = Thread(target=timer)
-timer_thread.start()
+Thread(target=timer).start()
+Thread(target=load_ai).start()
 print("start")
 bot.infinity_polling()
