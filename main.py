@@ -325,8 +325,8 @@ def query_photo(inline_query):
                     requests.post(webserver.url + "upload/" + photo_id, data=bot.download_file(
                         bot.get_file(photo_id).file_path))
             else:
-                if not os.path.exists(image_url):
-                    with open(image_url, 'wb') as new_photo:
+                if not os.path.exists("static/" + image_url):
+                    with open("static/" + image_url, 'wb') as new_photo:
                         new_photo.write(bot.download_file(bot.get_file(photo_id).file_path))
             thumb_url = webserver.url + image_url
         results.append(telebot.types.InlineQueryResultArticle(

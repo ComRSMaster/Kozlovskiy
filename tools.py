@@ -21,7 +21,6 @@ else:
 from importlib import util
 
 import telebot
-import torch
 
 from bs4 import BeautifulSoup
 
@@ -51,7 +50,7 @@ with open('db.json', encoding="utf-8") as db_file:
 ignore: list = db['ignore']
 images: dict = db['images']
 current_chat = db['current_chat']
-users: dict[str, dict] = db['users']
+users: dict = db['users']
 birthdays: dict = db['birthdays']
 active_goroda: list = db['active_goroda']
 current_letters = db['current_letters']
@@ -63,17 +62,11 @@ current_users = db['current_users']
 ai_datas: dict = db['ai_datas']
 
 rec = None
-tts_model = None
 
 
 def load_ai():
     global rec
-    global tts_model
     rec = vosk.KaldiRecognizer(vosk.Model("model_small"), samplerate)
-    torch.set_num_threads(4)
-    # noinspection PyUnresolvedReferences
-    tts_model = torch.package.PackageImporter('tts-model.pt').load_pickle("tts_models", "model")
-    tts_model.to(torch.device('cpu'))
     print("ai loaded")
 
 
@@ -172,7 +165,9 @@ def ai_talk(chat_id: str, msg_text, voice_id, args, is_private=True):
         is_voice = voice_id is not None
         if is_voice:
             bot.send_chat_action(chat_id, action="record_voice")
-            msg_text = stt(voice_id) + ("\n" + msg_text) if msg_text != "" else ""
+            msg_text = stt(voice_id) + ("\n" + msg_text if msg_text != "" else "")
+        else:
+            bot.send_chat_action(chat_id, action="typing")
         if msg_text != "":
             ai_datas[chat_id].append(msg_text)
             res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
@@ -314,7 +309,7 @@ def stt(file_id, reply_to_message=None):
         except FileExistsError:
             pass
         command = [
-            f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'usr/bin/ffmpeg',
+            f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else 'ffmpeg',
             '-n', '-i', path + ".ogg",
             '-acodec', 'pcm_s16le',
             '-ac', '1',
@@ -333,7 +328,6 @@ def stt(file_id, reply_to_message=None):
         data = wf.readframes(samplerate)
         if len(data) == 0:
             break
-        rec: vosk.KaldiRecognizer
         if rec.AcceptWaveform(data):
             result += json.loads(rec.Result())['text']
 
@@ -345,27 +339,4 @@ def stt(file_id, reply_to_message=None):
         bot.edit_message_text(result, reply_to_message.chat.id, progress_id)
 
     return result
-
-
-def tts(text: str):
-    voice_name = f"{datetime.microsecond}.wav"
-    while tts_model is None:
-        time.sleep(0.5)
-    # noinspection PyUnresolvedReferences
-    tts_model.save_wav(text=text,
-                       speaker='eugene',
-                       audio_path=voice_name,
-                       sample_rate=samplerate)
-
-    path = "cache/" + voice_name
-    command = [
-        f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'usr/bin/ffmpeg',
-        '-n', '-i', path + ".ogg",
-        '-c', 'a libopus',
-        path + ".wav"
-    ]
-    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    os.remove(voice_name)
-    with open(path + ".ogg", "xb") as n_f:
-        return
 
