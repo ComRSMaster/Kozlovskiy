@@ -9,7 +9,7 @@ from tools import *
 @bot.message_handler(content_types=content_types)
 def chatting(msg: telebot.types.Message):
     current = str(n(msg.text) + n(msg.caption)).lower()
-    args = re.split(r'[ ,.;&!?@\[\]]+', current)
+    args = re.split(r'[ ,.;&!?\[\]]+', current)
     # chat management
     if msg.chat.type == "private":
         new_private_cr(str(msg.chat.id))
@@ -135,7 +135,6 @@ def chatting(msg: telebot.types.Message):
             bot.send_message(msg.chat.id,
                              "Ответьте на голосовое/видео сообщение этой командой /d, чтобы его расшифровать.")
             return
-        bot.send_chat_action(msg.chat.id, action="typing")
         Thread(target=stt, args=[file_id, msg.reply_to_message]).start()
         return
     # id
@@ -147,12 +146,11 @@ def chatting(msg: telebot.types.Message):
     elif current.startswith("/chat"):
         if len(args) == 1:
             bot.send_message(
-                msg.chat.id, "Использование: /chat <b>chat_id</b> \n"
-                             "<i>chat_id</i> - id чата, с которым ты будешь общаться от имени Козловского. \n"
+                msg.chat.id, "Эта команда позволяет писать <b>анонимно</b> другим людям.\n\n"
                              "/id - получить <i>chat_id</i> <b>любого</b> человека.\n"
-                             "Нажмите кнопку для выбора возможных чатов", "HTML",
+                             "<b>⬇ Нажмите кнопку ниже для выбора чата ⬇</b>", "HTML",
                 reply_markup=telebot.types.InlineKeyboardMarkup().add(
-                    telebot.types.InlineKeyboardButton(text="Выбрать чат", switch_inline_query_current_chat="")))
+                    telebot.types.InlineKeyboardButton(text="Выбрать чат 💬", switch_inline_query_current_chat="")))
             return
         start_chat(str(msg.chat.id), args[1])
     else:
@@ -176,7 +174,7 @@ def chatting(msg: telebot.types.Message):
     # fun
     if str(msg.chat.id) not in chat_id_my:
         # random
-        if any(s in args for s in randoms):
+        if current.startswith("/rnd") or any(s in args for s in randoms):
             start_num = 1
             end_num = 6
             try:
@@ -192,7 +190,7 @@ def chatting(msg: telebot.types.Message):
             if start_num > end_num:
                 start_num, end_num = end_num, start_num
             bot.send_message(msg.chat.id,
-                             f"Случайное число от {start_num} до {end_num}: {random.randint(start_num, end_num)}")
+                             f"🎲 Случайное число от {start_num} до {end_num}:\n{random.randint(start_num, end_num)}")
             return
         # image search
         if any(s in current for s in searches):
@@ -236,7 +234,7 @@ def chatting(msg: telebot.types.Message):
                 save()
                 return
         # ai talk
-        ai_talk(str(msg.chat.id), n(msg.text) + n(msg.caption), get_voice_id(msg), args, msg.chat.type == "private")
+        ai_talk(msg, args)
 
 
 @bot.callback_query_handler(func=lambda call: 'btn' in call.data)

@@ -10,6 +10,7 @@ import wave
 from datetime import datetime
 
 import requests
+import torch
 import vosk
 
 if sys.version_info < (3, 9):
@@ -36,7 +37,6 @@ config.read("config.ini", encoding="utf8")  # читаем конфиг
 MIN_BIRTHDAY_HOUR = config.getint("Settings", "MIN_BIRTHDAY_HOUR")
 admin_chat = json.loads(config["Settings"]['admin_chat'])
 success_vid = json.loads(config["Settings"]['success_vid'])
-starts = json.loads(config["Settings"]['starts'])
 calls = json.loads(config["Settings"]['calls'])
 calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
@@ -61,12 +61,18 @@ chat_msg_pen = db['chat_msg_pen']
 current_users = db['current_users']
 ai_datas: dict = db['ai_datas']
 
-rec = None
+# noinspection PyTypeChecker
+rec: vosk.KaldiRecognizer = None
+tts_model = None
 
 
 def load_ai():
     global rec
+    global tts_model
     rec = vosk.KaldiRecognizer(vosk.Model("model_small"), samplerate)
+    # noinspection PyUnresolvedReferences
+    tts_model = torch.package.PackageImporter('tts-model.pt').load_pickle("tts_models", "model")
+    tts_model.to(torch.device('cpu'))
     print("ai loaded")
 
 
@@ -155,13 +161,16 @@ def get_city_letter(str_city, i=-1):
     return str_city[i - 1]
 
 
-def ai_talk(chat_id: str, msg_text, voice_id, args, is_private=True):
+def ai_talk(msg, args):
+    chat_id = str(msg.chat.id)
     if chat_id in ai_datas:
         if any(s in args for s in ends):
             ai_datas.pop(chat_id)
             bot.send_message(chat_id, "Пока")
             save()
             return
+        msg_text = n(msg.text) + n(msg.caption)
+        voice_id = get_voice_id(msg)
         is_voice = voice_id is not None
         if is_voice:
             bot.send_chat_action(chat_id, action="record_voice")
@@ -173,14 +182,17 @@ def ai_talk(chat_id: str, msg_text, voice_id, args, is_private=True):
             res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
                                 json={"instances": [{"contexts": [ai_datas[chat_id]]}]}).json()
             answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
-
-            bot.send_message(chat_id, answer)
+            if is_voice:
+                bot.send_voice(chat_id, tts(answer))
+            else:
+                bot.send_message(chat_id, answer)
             ai_datas[chat_id].append(answer)
             ai_datas[chat_id] = ai_datas[chat_id][-30:]
             save()
-    elif any(s in args for s in calls) or (is_private and any(s in args for s in calls_private)):
+    elif args[0].startswith("/start") or any(s in args for s in calls) or (
+            msg.chat.type == "private" and any(s in args for s in calls_private)):
         ai_datas.setdefault(chat_id, [])
-        ai_talk(chat_id, msg_text, voice_id, args, is_private)
+        ai_talk(msg, args)
         save()
 
 
@@ -236,6 +248,9 @@ def parse_chat(chat: telebot.types.Chat):
             pass
     return text
 
+#
+# def retrieve_chat():
+
 
 def timer():
     while True:
@@ -281,7 +296,7 @@ def get_voice_id(msg: telebot.types.Message):
     elif msg.content_type == "video_note":
         file_id = msg.video_note.file_id
     elif msg.content_type == "video":
-        file_id = msg.reply_to_message.video.file_id
+        file_id = msg.video.file_id
     elif msg.reply_to_message is not None:
         if msg.reply_to_message.content_type == "voice":
             file_id = msg.reply_to_message.voice.file_id
@@ -294,45 +309,29 @@ def get_voice_id(msg: telebot.types.Message):
     return file_id
 
 
-def stt(file_id, reply_to_message=None):
+def stt(file_id: str, reply_to_message=None):
     global rec
     stats = reply_to_message is not None
     progress_id = -1
     if stats:
         progress_id = bot.reply_to(reply_to_message, "Расшифровка: 0%").message_id
 
-    path = "cache/" + file_id
-    if not os.path.exists(path + ".wav"):
-        try:
-            with open(path + ".ogg", "xb") as n_f:
-                n_f.write(bot.download_file(bot.get_file(file_id).file_path))
-        except FileExistsError:
-            pass
-        command = [
-            f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else 'ffmpeg',
-            '-n', '-i', path + ".ogg",
-            '-acodec', 'pcm_s16le',
-            '-ac', '1',
-            '-ar', str(samplerate), path + ".wav"
-        ]
-        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        os.remove(path + ".ogg")
-
+    command = [
+        f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else 'ffmpeg',
+        '-n', '-i', bot.get_file_url(file_id),
+        '-ac', '1', '-ar', str(samplerate), '-acodec', 'pcm_s16le', '-f', 's16le', 'pipe:'
+    ]
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    audio_data = proc.communicate()[0]
     if stats:
         bot.edit_message_text("Расшифровка: 50%", reply_to_message.chat.id, progress_id)
-    wf = wave.open(path + ".wav", "rb")
     result = ''
     while rec is None:
         time.sleep(0.5)
-    while True:
-        data = wf.readframes(samplerate)
-        if len(data) == 0:
-            break
-        if rec.AcceptWaveform(data):
-            result += json.loads(rec.Result())['text']
+    if rec.AcceptWaveform(audio_data):
+        result += json.loads(rec.Result())['text']
 
-    res = json.loads(rec.FinalResult())
-    result += res['text']
+    result += json.loads(rec.FinalResult())['text']
     if result == '':
         result = "Тут ничего нет🤔" if stats else "Скажи что-нибудь"
     if stats:
@@ -340,3 +339,19 @@ def stt(file_id, reply_to_message=None):
 
     return result
 
+
+def tts(text: str):
+    while tts_model is None:
+        time.sleep(0.5)
+    # noinspection PyUnresolvedReferences
+    audio = tts_model.apply_tts(text=text, speaker='eugene', sample_rate=samplerate)
+    command = [
+        f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'ffmpeg',
+        '-n', '-f', 's16le', '-ac', '1',
+        '-ar', str(samplerate), '-i', 'pipe:',
+        '-ac', '1', '-ar', str(samplerate),
+        '-acodec', 'libopus', '-f', 'opus', 'pipe:']
+    proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    out = proc.communicate(input=(audio * 32767).numpy().astype('int16').tobytes())[0]
+
+    return out
