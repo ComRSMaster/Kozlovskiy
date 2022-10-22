@@ -6,7 +6,6 @@ import subprocess
 import sys
 import time
 import traceback
-import wave
 from datetime import datetime
 
 import requests
@@ -18,12 +17,10 @@ if sys.version_info < (3, 9):
     from backports.zoneinfo import ZoneInfo
 else:
     from zoneinfo import ZoneInfo
+import telebot
+from bs4 import BeautifulSoup
 
 from importlib import util
-
-import telebot
-
-from bs4 import BeautifulSoup
 
 is_local = util.find_spec("replit") is None
 del util
@@ -42,7 +39,8 @@ calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
 searches = json.loads(config["Settings"]['searches'])
 randoms = json.loads(config["Settings"]['randoms'])
-samplerate = 48000
+samplerate = 16000
+samplerate_tts = 48000
 
 with open('db.json', encoding="utf-8") as db_file:
     db = json.load(db_file)
@@ -70,6 +68,7 @@ def load_ai():
     global rec
     global tts_model
     rec = vosk.KaldiRecognizer(vosk.Model("model_small"), samplerate)
+    torch.set_num_threads(4)
     # noinspection PyUnresolvedReferences
     tts_model = torch.package.PackageImporter('tts-model.pt').load_pickle("tts_models", "model")
     tts_model.to(torch.device('cpu'))
@@ -100,11 +99,7 @@ with open('cities.json', encoding="utf-8") as f:
 
 class ExceptionHandler(telebot.ExceptionHandler):
     def handle(self, exception):
-        if "Bot token is not defined" in exception.args[0]:
-            print("Неправильный токен бота")
-            # noinspection PyProtectedMember
-            os._exit(0)
-        bot.send_message(admin_chat, "ОШИБКА:\n" + str(traceback.format_exc()))
+        bot.send_message(admin_chat, "ОШИБКА:\n" + traceback.format_exc())
 
 
 TOKEN = os.getenv("Kozlovskiy_token")
@@ -187,7 +182,7 @@ def ai_talk(msg, args):
             else:
                 bot.send_message(chat_id, answer)
             ai_datas[chat_id].append(answer)
-            ai_datas[chat_id] = ai_datas[chat_id][-30:]
+            ai_datas[chat_id] = ai_datas[chat_id][-29:]
             save()
     elif args[0].startswith("/start") or any(s in args for s in calls) or (
             msg.chat.type == "private" and any(s in args for s in calls_private)):
@@ -248,6 +243,7 @@ def parse_chat(chat: telebot.types.Chat):
             pass
     return text
 
+
 #
 # def retrieve_chat():
 
@@ -265,7 +261,7 @@ def timer():
             else:
                 birthdays[key][2] = 0
             save()
-        time.sleep(1000)
+        time.sleep(2000)
 
 
 def new_group_cr(chat_id: str, title):
@@ -314,22 +310,22 @@ def stt(file_id: str, reply_to_message=None):
     stats = reply_to_message is not None
     progress_id = -1
     if stats:
-        progress_id = bot.reply_to(reply_to_message, "Расшифровка: 0%").message_id
+        progress_id = bot.reply_to(reply_to_message, "Расшифровка...").message_id
 
     command = [
         f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else 'ffmpeg',
         '-n', '-i', bot.get_file_url(file_id),
         '-ac', '1', '-ar', str(samplerate), '-acodec', 'pcm_s16le', '-f', 's16le', 'pipe:'
     ]
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    audio_data = proc.communicate()[0]
-    if stats:
-        bot.edit_message_text("Расшифровка: 50%", reply_to_message.chat.id, progress_id)
+    proc = subprocess.Popen(command, bufsize=samplerate * 8, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
     result = ''
     while rec is None:
         time.sleep(0.5)
-    if rec.AcceptWaveform(audio_data):
-        result += json.loads(rec.Result())['text']
+    while proc.poll() is None:
+        audio = proc.stdout.read(samplerate * 8)
+        if rec.AcceptWaveform(audio):
+            result += json.loads(rec.Result())['text']
 
     result += json.loads(rec.FinalResult())['text']
     if result == '':
@@ -344,12 +340,12 @@ def tts(text: str):
     while tts_model is None:
         time.sleep(0.5)
     # noinspection PyUnresolvedReferences
-    audio = tts_model.apply_tts(text=text, speaker='eugene', sample_rate=samplerate)
+    audio = tts_model.apply_tts(text=text, speaker='eugene')
     command = [
         f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'ffmpeg',
         '-n', '-f', 's16le', '-ac', '1',
-        '-ar', str(samplerate), '-i', 'pipe:',
-        '-ac', '1', '-ar', str(samplerate),
+        '-ar', str(samplerate_tts), '-i', 'pipe:',
+        '-ac', '1', '-ar', str(samplerate_tts),
         '-acodec', 'libopus', '-f', 'opus', 'pipe:']
     proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     out = proc.communicate(input=(audio * 32767).numpy().astype('int16').tobytes())[0]
