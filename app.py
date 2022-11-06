@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import re
+from io import StringIO
 from threading import Thread
 
 import tools
@@ -148,9 +149,22 @@ def chatting(msg: telebot.types.Message):
         print("bot killed")
         # noinspection PyProtectedMember
         os._exit(0)
-    # kill bot (admin only)
+    # exec command (admin only)
     elif current.startswith("/exec") and msg.chat.id == admin_chat:
-        bot.send_message(msg.chat.id, exec(msg.text[5:]))
+        code_out = StringIO()
+        sys.stdout = code_out
+        try:
+            exec(msg.text[6:])
+        except Exception as e:
+            bot.send_message(msg.chat.id, "ОШИБКА: " + str(e))
+            return
+        finally:
+            sys.stdout = sys.__stdout__
+        o = code_out.getvalue()
+        if o == '':
+            o = "Ничего не выведено"
+
+        bot.send_message(msg.chat.id, o)
 
     # chat228
     elif current.startswith("/chat"):
@@ -317,9 +331,9 @@ def on_edit(msg: telebot.types.Message):
 @bot.inline_handler(None)
 def query_photo(inline_query):
     results = []
-    exist_images = []
-    for i in bucket.list_blobs():
-        exist_images.append(i.name)
+    exist_images = {}
+    for b in bucket.list_blobs():
+        exist_images[b.name] = b.public_url
     index = 0
     for user in users:
         index += 1
@@ -329,10 +343,10 @@ def query_photo(inline_query):
         else:
             photo_id = current.photo.small_file_id
             file_name = photo_id + ".jpg"
-            image_url = "i/" + file_name
-            if file_name not in exist_images:
+            thumb_url = exist_images.get(file_name)
+            if thumb_url is None:
                 blob = bucket.blob(file_name)
-                blob.upload_from_file(bot.download_file(bot.get_file(photo_id).file_path))
+                blob.upload_from_string(bot.download_file(bot.get_file(photo_id).file_path), content_type='image/jpg')
                 blob.make_public()
                 thumb_url = blob.public_url
         results.append(telebot.types.InlineQueryResultArticle(
@@ -364,4 +378,4 @@ def ban_handler(member: telebot.types.ChatMemberUpdated):
 Thread(target=timer).start()
 Thread(target=load_ai).start()
 print("start")
-bot.infinity_polling()
+bot.infinity_polling(timeout=60, long_polling_timeout=60)
