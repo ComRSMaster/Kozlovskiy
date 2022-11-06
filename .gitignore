@@ -1,8 +1,7 @@
 .idea/
 __pycache__/
-static/i/
 venv/
-.replit
-replit.nix
 ffmpeg.exe
+ffmpeg
 db.json
+firebase-key.json

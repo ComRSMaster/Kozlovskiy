@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import configparser
 import json
 import os
@@ -7,7 +8,8 @@ import sys
 import time
 import traceback
 from datetime import datetime
-
+import firebase_admin
+from firebase_admin import credentials, db, storage
 import requests
 import torch
 import vosk
@@ -19,11 +21,6 @@ else:
     from zoneinfo import ZoneInfo
 import telebot
 from bs4 import BeautifulSoup
-
-from importlib import util
-
-is_local = util.find_spec("replit") is None
-del util
 
 content_types = [
     "text", "audio", "document", "photo", "sticker", "video", "video_note",
@@ -42,22 +39,26 @@ randoms = json.loads(config["Settings"]['randoms'])
 samplerate = 16000
 samplerate_tts = 48000
 
-with open('db.json', encoding="utf-8") as db_file:
-    db = json.load(db_file)
+with open('db.json', encoding="utf-8") as bd_file:
+    bd = json.load(bd_file)
 
-ignore: list = db['ignore']
-images: dict = db['images']
-current_chat = db['current_chat']
-users: dict = db['users']
-birthdays: dict = db['birthdays']
-active_goroda: list = db['active_goroda']
-current_letters = db['current_letters']
-chat_id_my = db['chat_id_my']
-chat_id_pen: list = db['chat_id_pen']
-chat_msg_my = db['chat_msg_my']
-chat_msg_pen = db['chat_msg_pen']
-current_users = db['current_users']
-ai_datas: dict = db['ai_datas']
+cred = credentials.Certificate("firebase-key.json")
+firebase_admin.initialize_app(cred, {'databaseURL': os.getenv("db_url"),
+                                                'storageBucket': os.getenv("storage_url")})
+ref = db.reference()
+bucket = storage.bucket()
+
+ignore: list = bd['ignore']
+images: dict = bd['images']
+current_chat = bd['current_chat']
+users: dict[str, dict] = bd['users']
+active_goroda: list = bd['active_goroda']
+current_letters = bd['current_letters']
+chat_id_my = bd['chat_id_my']
+chat_id_pen: list = bd['chat_id_pen']
+chat_msg_my = bd['chat_msg_my']
+chat_msg_pen = bd['chat_msg_pen']
+current_users = bd['current_users']
 
 # noinspection PyTypeChecker
 rec: vosk.KaldiRecognizer = None
@@ -76,21 +77,22 @@ def load_ai():
 
 
 def save():
-    db['ignore'] = ignore
-    db['images'] = images
-    db['current_chat'] = current_chat
-    db['users'] = users
-    db['birthdays'] = birthdays
-    db['active_goroda'] = active_goroda
-    db['current_letters'] = current_letters
-    db['chat_id_my'] = chat_id_my
-    db['chat_id_pen'] = chat_id_pen
-    db['chat_msg_my'] = chat_msg_my
-    db['chat_msg_pen'] = chat_msg_pen
-    db['current_users'] = current_users
-    db['ai_datas'] = ai_datas
+    bd['ignore'] = ignore
+    bd['images'] = images
+    bd['current_chat'] = current_chat
+    bd['users'] = users
+    bd['active_goroda'] = active_goroda
+    bd['current_letters'] = current_letters
+    bd['chat_id_my'] = chat_id_my
+    bd['chat_id_pen'] = chat_id_pen
+    bd['chat_msg_my'] = chat_msg_my
+    bd['chat_msg_pen'] = chat_msg_pen
+    bd['current_users'] = current_users
+    to_save = json.dumps(bd, ensure_ascii=False)
     with open('db.json', 'w', encoding='utf-8') as db_file1:
-        json.dump(db, db_file1, ensure_ascii=False)
+        db_file1.write(to_save)
+
+    ref.set(bd)
 
 
 with open('cities.json', encoding="utf-8") as f:
@@ -158,9 +160,10 @@ def get_city_letter(str_city, i=-1):
 
 def ai_talk(msg, args):
     chat_id = str(msg.chat.id)
-    if chat_id in ai_datas:
+    talk = users[chat_id].get("talk")
+    if talk is not None:
         if any(s in args for s in ends):
-            ai_datas.pop(chat_id)
+            users[chat_id].pop("talk")
             bot.send_message(chat_id, "Пока")
             save()
             return
@@ -173,20 +176,19 @@ def ai_talk(msg, args):
         else:
             bot.send_chat_action(chat_id, action="typing")
         if msg_text != "":
-            ai_datas[chat_id].append(msg_text)
+            talk.append(msg_text)
             res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
-                                json={"instances": [{"contexts": [ai_datas[chat_id]]}]}).json()
+                                json={"instances": [{"contexts": [talk]}]}).json()
             answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
             if is_voice:
                 bot.send_voice(chat_id, tts(answer))
             else:
                 bot.send_message(chat_id, answer)
-            ai_datas[chat_id].append(answer)
-            ai_datas[chat_id] = ai_datas[chat_id][-29:]
+            talk.append(answer)
             save()
     elif args[0].startswith("/start") or any(s in args for s in calls) or (
             msg.chat.type == "private" and any(s in args for s in calls_private)):
-        ai_datas.setdefault(chat_id, [])
+        users[chat_id]["talk"] = []
         ai_talk(msg, args)
         save()
 
@@ -244,23 +246,24 @@ def parse_chat(chat: telebot.types.Chat):
     return text
 
 
-#
-# def retrieve_chat():
-
-
 def timer():
     while True:
         now = datetime.now(ZoneInfo("Europe/Moscow"))
-        for key in birthdays:
-            if MIN_BIRTHDAY_HOUR <= now.hour and now.day == birthdays[key][0] and now.month == birthdays[key][1]:
-                if not birthdays[key][2]:
-                    bot.send_message(admin_chat, "Я поздравил с ДР: " + key)
-                    bot.send_video(key, success_vid, caption="<b>Поздравляю тебя с днём рождения!</b>🎉🎉🎉",
+        for u in users:
+            birthday: str = users[u].get("birthday")
+            if birthday is None:
+                continue
+            day, month = birthday.split("/")
+            if MIN_BIRTHDAY_HOUR <= now.hour and now.day == int(day) and now.month == int(month):
+                if not users[u].get("congratulated", 0):
+                    bot.send_message(admin_chat, "Я поздравил с ДР: " + u)
+                    bot.send_video(u, success_vid, caption="<b>Поздравляю тебя с днём рождения!</b>🎉🎉🎉",
                                    parse_mode="HTML")
-                    birthdays[key][2] = 1
+                    users[u]["congratulated"] = 1
+                save()
             else:
-                birthdays[key][2] = 0
-            save()
+                if users[u].pop("congratulated", 0):
+                    save()
         time.sleep(2000)
 
 

@@ -1,7 +1,8 @@
 beautifulsoup4
-Flask
+lxml
 tzdata
 pyTelegramBotAPI
 requests
 vosk
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch

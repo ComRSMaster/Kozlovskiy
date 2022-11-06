@@ -1,8 +1,8 @@
+#!/usr/bin/python3
 import re
 from threading import Thread
 
 import tools
-import webserver
 from tools import *
 
 
@@ -142,6 +142,16 @@ def chatting(msg: telebot.types.Message):
         get_id(msg)
         return
 
+    # kill bot (admin only)
+    elif current.startswith("/kill_bot") and msg.chat.id == admin_chat:
+        bot.send_message(msg.chat.id, "Бот успешно отключен")
+        print("bot killed")
+        # noinspection PyProtectedMember
+        os._exit(0)
+    # kill bot (admin only)
+    elif current.startswith("/exec") and msg.chat.id == admin_chat:
+        bot.send_message(msg.chat.id, exec(msg.text[5:]))
+
     # chat228
     elif current.startswith("/chat"):
         if len(args) == 1:
@@ -190,7 +200,7 @@ def chatting(msg: telebot.types.Message):
             if start_num > end_num:
                 start_num, end_num = end_num, start_num
             bot.send_message(msg.chat.id,
-                             f"🎲 Случайное число от {start_num} до {end_num}:\n{random.randint(start_num, end_num)}")
+                             f"🎲 Случайное число от {start_num} до {end_num}:  {random.randint(start_num, end_num)}")
             return
         # image search
         if any(s in current for s in searches):
@@ -307,7 +317,9 @@ def on_edit(msg: telebot.types.Message):
 @bot.inline_handler(None)
 def query_photo(inline_query):
     results = []
-    exist_images = requests.get(webserver.url + "check").json()["images"] if is_local else None
+    exist_images = []
+    for i in bucket.list_blobs():
+        exist_images.append(i.name)
     index = 0
     for user in users:
         index += 1
@@ -318,15 +330,11 @@ def query_photo(inline_query):
             photo_id = current.photo.small_file_id
             file_name = photo_id + ".jpg"
             image_url = "i/" + file_name
-            if is_local:
-                if file_name not in exist_images:
-                    requests.post(webserver.url + "upload/" + photo_id, data=bot.download_file(
-                        bot.get_file(photo_id).file_path))
-            else:
-                if not os.path.exists("static/" + image_url):
-                    with open("static/" + image_url, 'wb') as new_photo:
-                        new_photo.write(bot.download_file(bot.get_file(photo_id).file_path))
-            thumb_url = webserver.url + image_url
+            if file_name not in exist_images:
+                blob = bucket.blob(file_name)
+                blob.upload_from_file(bot.download_file(bot.get_file(photo_id).file_path))
+                blob.make_public()
+                thumb_url = blob.public_url
         results.append(telebot.types.InlineQueryResultArticle(
             index, current.title if current.type != "private" else current.first_name + n(current.last_name, " "),
             telebot.types.InputTextMessageContent("/chat " + user),
@@ -343,14 +351,6 @@ def ban_handler(member: telebot.types.ChatMemberUpdated):
             ignore.remove(str(member.chat.id))
         except ValueError:
             pass
-        try:
-            birthdays.pop(str(member.chat.id))
-        except KeyError:
-            pass
-        try:
-            ai_datas.pop(str(member.chat.id))
-        except KeyError:
-            pass
         save()
         bot.send_message(admin_chat, "<b>Удалён чат:  <pre>" + str(member.chat.id) + "</pre></b>", "HTML")
     else:
@@ -361,7 +361,6 @@ def ban_handler(member: telebot.types.ChatMemberUpdated):
 
 
 # Запуск бота
-webserver.keep_alive(is_local)
 Thread(target=timer).start()
 Thread(target=load_ai).start()
 print("start")
