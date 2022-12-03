@@ -11,8 +11,6 @@ from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, db, storage
 import requests
-import torch
-import vosk
 
 if sys.version_info < (3, 9):
     # noinspection PyUnresolvedReferences,PyPackageRequirements
@@ -35,7 +33,6 @@ calls = json.loads(config["Settings"]['calls'])
 calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
 searches = json.loads(config["Settings"]['searches'])
-randoms = json.loads(config["Settings"]['randoms'])
 samplerate = 16000
 samplerate_tts = 48000
 
@@ -44,7 +41,7 @@ with open('db.json', encoding="utf-8") as bd_file:
 
 cred = credentials.Certificate("firebase-key.json")
 firebase_admin.initialize_app(cred, {'databaseURL': os.getenv("db_url"),
-                                                'storageBucket': os.getenv("storage_url")})
+                                     'storageBucket': os.getenv("storage_url")})
 ref = db.reference()
 bucket = storage.bucket()
 
@@ -59,21 +56,6 @@ chat_id_pen: list = bd['chat_id_pen']
 chat_msg_my = bd['chat_msg_my']
 chat_msg_pen = bd['chat_msg_pen']
 current_users = bd['current_users']
-
-# noinspection PyTypeChecker
-rec: vosk.KaldiRecognizer = None
-tts_model = None
-
-
-def load_ai():
-    global rec
-    global tts_model
-    rec = vosk.KaldiRecognizer(vosk.Model("model_small"), samplerate)
-    torch.set_num_threads(4)
-    # noinspection PyUnresolvedReferences
-    tts_model = torch.package.PackageImporter('tts-model.pt').load_pickle("tts_models", "model")
-    tts_model.to(torch.device('cpu'))
-    print("ai loaded")
 
 
 def save():
@@ -105,14 +87,7 @@ class ExceptionHandler(telebot.ExceptionHandler):
 
 
 TOKEN = os.getenv("Kozlovskiy_token")
-bot = telebot.TeleBot(TOKEN, exception_handler=ExceptionHandler())
-
-
-def get_id(message):
-    users[str(message.chat.id)]["getting_id"] = 1
-    bot.send_message(message.chat.id, "Теперь перешли мне любое сообщение из чата, "
-                                      "или поделись со мной контактом этого человека.\n /cancel - отмена")
-    save()
+bot = telebot.TeleBot(TOKEN)  # TODO exception_handler=ExceptionHandler()
 
 
 def start_chat(chat_id, chat):
@@ -149,7 +124,7 @@ def start_chat(chat_id, chat):
         chat_msg_pen.append([])
         save()
     except telebot.apihelper.ApiTelegramException:
-        bot.send_message(chat_id, "Неправильный chat_id")
+        bot.send_message(chat_id, "<b>Чат не найден</b>", 'HTML')
 
 
 def get_city_letter(str_city, i=-1):
@@ -158,52 +133,62 @@ def get_city_letter(str_city, i=-1):
     return str_city[i - 1]
 
 
-def ai_talk(msg, args):
-    chat_id = str(msg.chat.id)
+def ai_talk(msg_text, chat_id: str, is_private=True, args=None, start='', append=False, send=False, msg_voice=None):
     talk = users[chat_id].get("talk")
-    if talk is not None:
-        if any(s in args for s in ends):
-            users[chat_id].pop("talk")
-            bot.send_message(chat_id, "Пока")
+    if talk is None:
+        if start:
+            users[chat_id]["talk"] = [msg_text, start]
+            if send:
+                bot.send_message(chat_id, start)
             save()
             return
-        msg_text = n(msg.text) + n(msg.caption)
-        voice_id = get_voice_id(msg)
-        is_voice = voice_id is not None
-        if is_voice:
-            bot.send_chat_action(chat_id, action="record_voice")
-            msg_text = stt(voice_id) + ("\n" + msg_text if msg_text != "" else "")
-        else:
-            bot.send_chat_action(chat_id, action="typing")
-        if msg_text != "":
-            talk.append(msg_text)
-            res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
-                                json={"instances": [{"contexts": [talk]}]}).json()
-            answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
-            if is_voice:
-                bot.send_voice(chat_id, tts(answer))
-            else:
-                bot.send_message(chat_id, answer)
-            talk.append(answer)
+        elif any(s in args for s in calls) or (is_private and any(s in args for s in calls_private)):
+            users[chat_id]["talk"] = []
+            talk = users[chat_id].get("talk")
             save()
-    elif args[0].startswith("/start") or any(s in args for s in calls) or (
-            msg.chat.type == "private" and any(s in args for s in calls_private)):
-        users[chat_id]["talk"] = []
-        ai_talk(msg, args)
+        else:
+            return
+    elif not start and any(s in args for s in ends):
+        users[chat_id].pop("talk")
+        bot.send_message(chat_id, "Пока👋")
+        save()
+        return
+    if append:
+        users[chat_id]["talk"] += [msg_text, start]
+        save()
+        return
+    voice_id = None if start else get_voice_id(msg_voice)
+    is_voice = voice_id is not None
+    if is_voice:
+        bot.send_chat_action(chat_id, action="record_voice")
+        msg_text = stt(voice_id) + ("\n" + msg_text if msg_text != "" else "")
+    else:
+        bot.send_chat_action(chat_id, action="typing")
+    if msg_text:
+        talk.append(msg_text)
+        res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
+                            json={"instances": [{"contexts": [talk]}]}).json()
+        answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
+        if is_voice:
+            bot.send_voice(chat_id, tts(answer))
+        else:
+            bot.send_message(chat_id, answer)
+        talk.append(answer)
         save()
 
 
-def photo_search(chat_id, search_photo):
+def photo_search(chat_id, msg_id, search_photo):
     bot.send_chat_action(chat_id, action="typing")
     url_pic = "https://yandex.ru/images/search?rpt=imageview&url=" + bot.get_file_url(search_photo.file_id)
     soup = BeautifulSoup(requests.get(url_pic).text, 'lxml')
     results_vk = soup.find('div', class_='CbirSites-ItemInfo')
     if 'vk.com/id' in results_vk.find('a').get('href'):
-        bot.send_message(chat_id, results_vk.find('div', class_='CbirSites-ItemDescription').get_text())
+        bot.send_message(chat_id, results_vk.find('div', class_='CbirSites-ItemDescription').get_text(),
+                         reply_to_message_id=msg_id)
         return
     results = soup.find('section', 'CbirTags').find_all('a')
-    bot.send_message(
-        chat_id, results[0].find('span').get_text() + ", " + results[1].find('span').get_text())
+    bot.send_message(chat_id, results[0].find('span').get_text() + ", " + results[1].find('span').get_text(),
+                     reply_to_message_id=msg_id)
 
 
 def todict(obj):
@@ -225,14 +210,14 @@ def n(text: str, addition=''):
 
 
 def parse_chat(chat: telebot.types.Chat):
-    text = "<b>Начат чат с:</b>\n\n"
+    text = ""
     if chat.type == "private":
-        text += '<b>Человек<a href="tg://user?id=' + str(chat.id) + '">: ' + chat.first_name + \
+        text += '<b>Начат чат с<a href="tg://user?id=' + str(chat.id) + '">: ' + chat.first_name + \
                 n(chat.last_name, ' ') + '</a></b>' + n(chat.bio, '\n<b>Описание:</b> ') + n(chat.username, '\n@')
     elif chat.type == "channel":
         return str(todict(chat))
     else:
-        text += "<b>Группа:</b> " + chat.title + n(chat.description, '\n<b>Описание:</b> ') + \
+        text += "<b>Начат чат с группой:</b> " + chat.title + n(chat.description, '\n<b>Описание:</b> ') + \
                 n(chat.username, '\n@') + n(chat.invite_link, '\n<b>Ссылка:</b> ')
         try:
             text += n(str(bot.get_chat_member_count(chat.id)), '\n<b>Участников:</b> ')
@@ -246,44 +231,79 @@ def parse_chat(chat: telebot.types.Chat):
     return text
 
 
+def get_exist_images():
+    exist_images = {}
+    for b in bucket.list_blobs():
+        exist_images[b.name] = b.public_url
+    return exist_images
+
+
+def update_user_info(user: telebot.types.Chat, exist_images):
+    chat = str(user.id)
+    users[chat]['private'] = user.type == "private"
+    users[chat]['name'] = user.title if not user.type == "private" else user.first_name + n(user.last_name, " ")
+    users[chat]['desc'] = n(user.bio) if user.type == "private" else n(user.description)
+    if user.photo is not None:
+        file_name = user.photo.small_file_id + ".jpg"
+        photo_url = exist_images.get(file_name)
+        if photo_url is None:
+            blob = bucket.blob(file_name)
+            blob.upload_from_string(bot.download_file(bot.get_file(user.photo.small_file_id).file_path),
+                                    content_type='image/jpg')
+            blob.make_public()
+            users[chat]['photo_url'] = blob.public_url
+        else:
+            users[chat]['photo_url'] = photo_url
+
+
 def timer():
     while True:
         now = datetime.now(ZoneInfo("Europe/Moscow"))
+        exist_images = get_exist_images()
         for u in users:
+            update_user_info(bot.get_chat(u), exist_images)
+
             birthday: str = users[u].get("birthday")
             if birthday is None:
                 continue
             day, month = birthday.split("/")
             if MIN_BIRTHDAY_HOUR <= now.hour and now.day == int(day) and now.month == int(month):
-                if not users[u].get("congratulated", 0):
-                    bot.send_message(admin_chat, "Я поздравил с ДР: " + u)
-                    bot.send_video(u, success_vid, caption="<b>Поздравляю тебя с днём рождения!</b>🎉🎉🎉",
-                                   parse_mode="HTML")
-                    users[u]["congratulated"] = 1
-                save()
+                if users[u].get("congratulated", 0):
+                    continue
+                bot.send_video(u, success_vid, caption="<b>Поздравляю тебя с днём рождения!</b>🎉🎉🎉",
+                               parse_mode="HTML")
+                bot.send_message(admin_chat, "Я поздравил с ДР: " + u)
+                users[u]["congratulated"] = 1
+                ai_talk("У меня сегодня день рождения!", u, start="Поздравляю тебя с днём рождения!🎉🎉🎉", append=True)
             else:
-                if users[u].pop("congratulated", 0):
-                    save()
-        time.sleep(2000)
+                users[u].pop("congratulated", 0)
+        save()
+        time.sleep(3000)
 
 
-def new_group_cr(chat_id: str, title):
+def new_group_cr(chat: telebot.types.Chat):
+    chat_id = str(chat.id)
     if users.get(chat_id) is not None:
         return
+    users[chat_id] = {}
     markup = telebot.types.InlineKeyboardMarkup()
     markup.add(telebot.types.InlineKeyboardButton(text="Ignore", callback_data="btn_ignore_" + chat_id))
-    bot.send_message(admin_chat, "<b>Новая группа: " + title + "  <pre>" +
+    bot.send_message(admin_chat, "<b>Новая группа: " + chat.title + "  <pre>" +
                      chat_id + "</pre></b>", 'HTML', reply_markup=markup)
-    users[chat_id] = {}
+    update_user_info(bot.get_chat(chat.id), get_exist_images())
     save()
 
 
-def new_private_cr(chat_id: str):
+def new_private_cr(chat: telebot.types.Chat):
+    chat_id = str(chat.id)
     if users.get(chat_id) is not None:
-        return
+        return False
     users[chat_id] = {}
     bot.send_video(chat_id, success_vid, caption="<b>Чем я могу помочь?</b>🤔", parse_mode="HTML")
+    ai_talk("/start", str(chat.id), start="Чем я могу помочь?🤔")
+    update_user_info(bot.get_chat(chat.id), get_exist_images())
     save()
+    return True
 
 
 def get_voice_id(msg: telebot.types.Message):
@@ -340,8 +360,6 @@ def stt(file_id: str, reply_to_message=None):
 
 
 def tts(text: str):
-    while tts_model is None:
-        time.sleep(0.5)
     # noinspection PyUnresolvedReferences
     audio = tts_model.apply_tts(text=text, speaker='eugene')
     command = [
