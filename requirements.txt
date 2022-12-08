@@ -4,6 +4,5 @@ tzdata
 firebase_admin
 pyTelegramBotAPI
 requests
-SpeechRecognition
 vosk
 torch
