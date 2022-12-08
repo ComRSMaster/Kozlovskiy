@@ -3,6 +3,8 @@ import re
 from io import StringIO
 from threading import Thread
 
+import telebot.types
+
 import tools
 from tools import *
 
@@ -17,8 +19,9 @@ def command_start(msg: telebot.types.Message):
     chat_management(msg)
 
 
-@bot.message_handler(commands=['help'])  # TODO
+@bot.message_handler(commands=['help'])
 def command_help(msg: telebot.types.Message):
+    bot.send_message(msg.chat.id, help_text, 'HTML')
     chat_management(msg)
 
 
@@ -33,8 +36,8 @@ def command_chat(msg: telebot.types.Message):
                          "<b>⬇ Нажмите кнопку ниже для выбора чата ⬇</b>", "HTML",
             reply_markup=telebot.types.InlineKeyboardMarkup().add(
                 telebot.types.InlineKeyboardButton(text="Выбрать чат 💬", switch_inline_query_current_chat="")))
-        return
-    start_chat(str(msg.chat.id), args[1])
+    else:
+        start_chat(str(msg.chat.id), args[1])
     chat_management(msg)
 
 
@@ -53,8 +56,8 @@ def command_d(msg: telebot.types.Message):
     if file_id is None:
         bot.send_message(msg.chat.id,
                          "<b>Ответьте на голосовое/видео сообщение командой /d, чтобы его расшифровать.</b>", 'HTML')
-        return
-    stt(file_id, msg.reply_to_message)
+    else:
+        stt(file_id, msg.reply_to_message)
     chat_management(msg)
 
 
@@ -119,7 +122,7 @@ def command_exec(msg: telebot.types.Message):
 
 @bot.message_handler(commands=['cancel'])
 def command_cancel(msg: telebot.types.Message):
-    if users[str(msg.chat.id)].pop("getting_id", 0) != 0:
+    if users[str(msg.chat.id)].pop("getting_id", 0):
         bot.send_message(msg.chat.id, "Всё отменяю")
         save()
     else:
@@ -197,23 +200,7 @@ def chatting(msg: telebot.types.Message):
     # voter
     if msg.content_type == "poll":
         bot.send_message(msg.chat.id, random.choice(msg.poll.options).text, reply_to_message_id=msg.id)
-    try:
-        my_index = chat_id_my.index(str(msg.chat.id))  # мы
-        reply = None
-        try:
-            reply = chat_msg_pen[my_index][chat_msg_my[my_index].index(msg.reply_to_message.message_id)]
-        except AttributeError:
-            pass
-        chat_msg_my[my_index].append(msg.id)
-        chat_msg_pen[my_index].append(bot.copy_message(chat_id_pen[my_index], msg.chat.id, msg.id,
-                                                       reply_to_message_id=reply).message_id)
-        save()
-    except ValueError:
-        pass
-    except telebot.apihelper.ApiTelegramException as err:
-        bot.send_message(msg.chat.id, "<b>Этому человеку невозможно написать через Козловского.</b>"
-                                      "<i>(" + str(err.description) + ")</i>", 'HTML')
-    if users[str(msg.chat.id)].pop("getting_id", 0) != 0:
+    if users[str(msg.chat.id)].pop("getting_id", 0):
         markup = telebot.types.InlineKeyboardMarkup()
         if msg.content_type == 'contact':
             user_id = str(msg.contact.user_id)
@@ -229,89 +216,128 @@ def chatting(msg: telebot.types.Message):
             bot.send_message(msg.chat.id, chat_id, reply_markup=markup)
             return
         save()
-
-    # fun
-    if str(msg.chat.id) not in chat_id_my:
-        # image search
-        if any(s in current for s in searches):
-            if msg.content_type == 'photo':
-                photo_search(msg.chat.id, msg.id, msg.photo[-1])
-                return
-            elif msg.reply_to_message.content_type == 'photo':
-                photo_search(msg.chat.id, msg.id, msg.reply_to_message.photo[-1])
-                return
-        # goroda game
+    try:
+        my_index = chat_id_my.index(str(msg.chat.id))  # мы
+        reply = None
         try:
-            index = active_goroda.index(str(msg.chat.id))
-            if any(s in args for s in ends):
-                active_goroda.pop(index)
-                current_letters.pop(index)
-                bot.send_message(msg.chat.id, "<b>Конец игры</b>", "HTML")
-                save()
-                return
-            if current:
-                if current[0] == current_letters[index] or current_letters[index] == "":
-                    try:
-                        random_city = random.choice(goroda[get_city_letter(current)])
-                        bot.send_message(msg.chat.id, random_city)
-                        current_letters[index] = get_city_letter(random_city)
-                        save()
-                    except KeyError:
-                        bot.send_message(msg.chat.id, "<b>Невозможно сгенерировать город</b>")
-                else:
-                    bot.send_message(msg.chat.id, f"<b>Слово должно начинаться на букву:</b>  "
-                                                  f"<i>{current_letters[index].upper()}</i>", "HTML")
-                return
-        except ValueError:
-            if "в города" in current:
-                active_goroda.append(str(msg.chat.id))
-                current_letters.append("")
-                bot.send_message(msg.chat.id, "<b>Вы начали игру в города.</b>\n<i>Начинайте первым!</i>", "HTML")
-                save()
-                return
-        # ai talk
-        ai_talk(n(msg.text) + n(msg.caption), str(msg.chat.id), msg.chat.type == 'private', args, msg_voice=msg)
+            reply = chat_msg_pen[my_index][chat_msg_my[my_index].index(msg.reply_to_message.message_id)]
+        except AttributeError:
+            pass
+        chat_msg_my[my_index].append(msg.id)
+        chat_msg_pen[my_index].append(bot.copy_message(chat_id_pen[my_index], msg.chat.id, msg.id,
+                                                       reply_to_message_id=reply).message_id)
+        save()
+        return
+    except telebot.apihelper.ApiTelegramException as err:
+        bot.send_message(msg.chat.id, "<b>Этому человеку невозможно написать через Козловского.</b>"
+                                      "<i>(" + str(err.description) + ")</i>", 'HTML')
+    except ValueError:
+        pass
+    # image search
+    if any(s in current for s in searches):
+        if msg.content_type == 'photo':
+            photo_search(msg.chat.id, msg.id, msg.photo[-1])
+            return
+        elif msg.reply_to_message is not None and msg.reply_to_message.content_type == 'photo':
+            photo_search(msg.chat.id, msg.reply_to_message.id, msg.reply_to_message.photo[-1])
+            return
+    # cities game
+    if 'letter' in users[str(msg.chat.id)]:
+        if 'complex_msg' in users[str(msg.chat.id)]:
+            bot.edit_message_text(
+                f"<b>Вы начали игру в города.</b>\n<i>Начинайте первым!</i>\n\n"
+                f"Сложность: <b>{'ХАРДКОР' if users[str(msg.chat.id)]['complex'] == 'h' else 'ЛЕГКО'}</b>",
+                msg.chat.id, users[str(msg.chat.id)]['complex_msg'], parse_mode="HTML")
+            users[str(msg.chat.id)].pop('complex_msg')
+        if any(s in args for s in ends):
+            users[str(msg.chat.id)].pop('letter')
+            users[str(msg.chat.id)].pop('complex')
+            users[str(msg.chat.id)].pop('complex_msg', 0)
+            bot.send_message(msg.chat.id, "<b>Конец игры</b>", "HTML")
+            save()
+            return
+        if current:
+            letter = users[str(msg.chat.id)]['letter']
+            if current[0] == letter or letter == '':
+                try:
+                    cities_db = cities_hard if users[str(msg.chat.id)]['complex'] == 'h' else cities_easy
+                    random_city = random.choice(cities_db[get_city_letter(current)])
+                    bot.send_message(msg.chat.id, random_city)
+                    users[str(msg.chat.id)]['letter'] = get_city_letter(random_city)
+                    save()
+                except KeyError:
+                    bot.send_message(msg.chat.id, "<b>Невозможно сгенерировать город</b>", "HTML")
+            else:
+                bot.send_message(msg.chat.id, f"<b>Слово должно начинаться на букву:</b>  "
+                                              f"<i>{letter.upper()}</i>", "HTML")
+            return
+    elif "в города" in current:
+        users[str(msg.chat.id)]['letter'] = ''
+        users[str(msg.chat.id)]['complex'] = 'e'
+        users[str(msg.chat.id)]['complex_msg'] = bot.send_message(
+            msg.chat.id, "<b>Вы начали игру в города.</b>\n<i>Начинайте первым!</i>\n\n"
+                         "Сложность: <b>ЛЕГКО</b>\n⬇<i>Выберите сложность⬇</i>", "HTML",
+            reply_markup=telebot.util.quick_markup({"ЛЕГКО👌": {'callback_data': 'btn_complex_e'},
+                                                    "🔥ХАРДКОР🔥": {'callback_data': 'btn_complex_h'}})).message_id
+        save()
+        return
+    # ai talk
+    ai_talk(n(msg.text) + n(msg.caption), str(msg.chat.id), msg.chat.type == 'private', args, msg_voice=msg)
 
 
 @bot.callback_query_handler(func=lambda call: 'btn' in call.data)
-def query(call):
+def query(call: telebot.types.CallbackQuery):
     data = str(call.data)
-    if data.startswith("btn_ignore_"):
-        ignore.append(data.split("btn_ignore_")[1])
-        bot.edit_message_reply_markup(call.message.chat.id, message_id=call.message.message_id)
-        save()
-    elif data.startswith("btn_chat_"):
+    if data.startswith("btn_complex"):
+        comp = data[-1:]
+        users[str(call.message.chat.id)]['complex'] = comp
+        bot.answer_callback_query(call.id, "Выбрана сложность: " + ("ХАРДКОР" if comp == 'h' else "ЛЕГКО"))
+        bot.edit_message_text(
+            f"<b>Вы начали игру в города.</b>\n<i>Начинайте первым!</i>\n\n"
+            f"Сложность: <b>{'ХАРДКОР' if comp == 'h' else 'ЛЕГКО'}</b>\n⬇<i>Выберите сложность⬇</i>",
+            call.message.chat.id, users[str(call.message.chat.id)]['complex_msg'], parse_mode="HTML",
+            reply_markup=telebot.util.quick_markup({"ЛЕГКО👌": {'callback_data': 'btn_complex_e'},
+                                                    "🔥ХАРДКОР🔥": {'callback_data': 'btn_complex_h'}}))
+    if data.startswith("btn_chat_"):
         start_chat(str(call.message.chat.id), data.split("btn_chat_")[1])
+        bot.answer_callback_query(call.id, "Чат начат!")
     elif data.startswith("btn_photo_"):
-        bot.send_chat_action(call.message.chat.id, action="upload_photo")
         chat_id = data.split("btn_photo_")[1]
-        chat_info = bot.get_chat(chat_id)
+        try:
+            chat_info = bot.get_chat(chat_id)
+        except telebot.apihelper.ApiTelegramException:
+            bot.answer_callback_query(call.id, "Чат не найден!")
+            return
+        if chat_info.photo is None:
+            bot.answer_callback_query(call.id, "Фото профиля не найдены!")
+            return
+        bot.send_chat_action(call.message.chat.id, action="upload_photo")
         if chat_info.type == "private":
             profile_photos: list = bot.get_user_profile_photos(int(chat_id)).photos
-            chunks = [profile_photos[i:i + 10] for i in range(0, len(profile_photos), 10)]
-            for c in chunks:
-                media_group = []
-                new_photos = []
-                for i in range(len(c)):
-                    photo_id = images.get(c[i][-1].file_id)
-                    if photo_id is None:
-                        photo_id = bot.download_file(bot.get_file(c[i][-1].file_id).file_path)
-                        new_photos.append(i)
-                    media_group.append(telebot.types.InputMediaPhoto(photo_id))
-                sent_photos = bot.send_media_group(call.message.chat.id, media_group)
-                for i in new_photos:
-                    images.setdefault(c[i][-1].file_id, sent_photos[i].photo[-1].file_id)
+            i = 0
+            media_group = []
+            update_action = True
+            for p in profile_photos:
+                media_group.append(telebot.types.InputMediaPhoto(
+                    images[p[-1].file_id] if p[-1].file_id in images else
+                    bot.download_file(bot.get_file(p[-1].file_id).file_path)))
+                i += 1
+                if i == len(profile_photos):
+                    i = 10
+                    update_action = False
+                if i % 10 == 0:
+                    sent_photos = bot.send_media_group(call.message.chat.id, media_group)
+                    if update_action:
+                        bot.send_chat_action(call.message.chat.id, action="upload_photo")
+                    media_group.clear()
+                    for c in range(len(sent_photos)):
+                        images[profile_photos[i - 10 + c][-1].file_id] = sent_photos[c].photo[-1].file_id
         else:
             file_id = chat_info.photo.big_file_id
-            photo_id = images.get(file_id)
-            if photo_id is None:
-                photo_id = bot.send_photo(call.message.chat.id,
-                                          bot.download_file(bot.get_file(file_id).file_path)).photo[-1].file_id
-                images.setdefault(file_id, photo_id)
-            else:
-                bot.send_photo(call.message.chat.id, photo_id)
+            photo_id = images[file_id] if file_id in images else bot.download_file(bot.get_file(file_id).file_path)
+            images[file_id] = bot.send_photo(call.message.chat.id, photo_id).photo[-1].file_id
+        bot.answer_callback_query(call.id, "Фото отправлены!")
         save()
-
     elif data.startswith("btn_pinned_"):
         forward = data.split("_")
         try:
@@ -321,7 +347,13 @@ def query(call):
                 bot.send_message(call.message.chat.id, f"<b>Закреп от: {forward[4]}</b>", 'HTML')
                 bot.copy_message(call.message.chat.id, forward[2], int(forward[3]))
             except telebot.apihelper.ApiTelegramException:
-                bot.send_message(call.message.chat.id, "Сообщение не закреплено")
+                bot.answer_callback_query(call.id, "Сообщение не закреплено!")
+                return
+        bot.answer_callback_query(call.id, "Закреп отправлен!")
+    elif data.startswith("btn_ignore_"):
+        ignore.append(data.split("btn_ignore_")[1])
+        bot.edit_message_reply_markup(call.message.chat.id, message_id=call.message.message_id)
+        save()
 
 
 @bot.edited_message_handler(content_types=content_types)
@@ -349,7 +381,7 @@ def query_photo(inline_query):
         results.append(telebot.types.InlineQueryResultArticle(
             index, users[u]['name'], telebot.types.InputTextMessageContent("/chat " + u),
             description=users[u]['desc'] + "\nНажмите, чтобы написать в " + (
-                "этот чат" if users[u]['private'] else "эту группу"), thumb_url=users[u].get('photo_url')))
+                "этот чат" if users[u]['private'] else "эту группу"), thumb_url=users[u]['photo_url']))
     bot.answer_inline_query(inline_query.id, results)
 
 
@@ -369,5 +401,6 @@ def ban_handler(member: telebot.types.ChatMemberUpdated):
 
 # Запуск бота
 Thread(target=timer).start()
+Thread(target=load_ai).start()
 print("start")
 bot.infinity_polling(timeout=60, long_polling_timeout=60)

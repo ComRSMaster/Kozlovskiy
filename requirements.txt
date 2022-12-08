@@ -1,8 +1,9 @@
 beautifulsoup4
 lxml
 tzdata
+firebase_admin
 pyTelegramBotAPI
 requests
+SpeechRecognition
 vosk
---extra-index-url https://download.pytorch.org/whl/cpu
 torch

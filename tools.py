@@ -9,7 +9,9 @@ import time
 import traceback
 from datetime import datetime
 import firebase_admin
+import vosk
 from firebase_admin import credentials, db, storage
+import torch
 import requests
 
 if sys.version_info < (3, 9):
@@ -40,8 +42,7 @@ with open('db.json', encoding="utf-8") as bd_file:
     bd = json.load(bd_file)
 
 cred = credentials.Certificate("firebase-key.json")
-firebase_admin.initialize_app(cred, {'databaseURL': os.getenv("db_url"),
-                                     'storageBucket': os.getenv("storage_url")})
+firebase_admin.initialize_app(cred, {'databaseURL': os.getenv("db_url"), 'storageBucket': os.getenv("storage_url")})
 ref = db.reference()
 bucket = storage.bucket()
 
@@ -49,13 +50,43 @@ ignore: list = bd['ignore']
 images: dict = bd['images']
 current_chat = bd['current_chat']
 users: dict[str, dict] = bd['users']
-active_goroda: list = bd['active_goroda']
-current_letters = bd['current_letters']
 chat_id_my = bd['chat_id_my']
 chat_id_pen: list = bd['chat_id_pen']
 chat_msg_my = bd['chat_msg_my']
 chat_msg_pen = bd['chat_msg_pen']
 current_users = bd['current_users']
+help_text = \
+    "/start - Начать разговор с ИИ. <i>Также можно просто написать \"<code>Привет</code>\", \"<code>Даня</code>\" " \
+    "или \"<code>Козловский</code>\".</i>\nЧтобы закончить, напишите \"<code>Пока</code>\", \"<code>Стоп</code>\" " \
+    "или \"<code>Хватит</code>\"\n/help - Помощь по функционалу бота <i>(это сообщение)</i>\n" \
+    "/d - Расшифровка голосовых/видео сообщений: для этого нужно <b>ответить</b> на такое сообщение этой командой\n" \
+    "/chat - Анонимная переписка от имени Козловского:\n1. Введите эту команду\n2. Нажмите кнопку \"<i>Выбрать чат" \
+    "</i>\"\n3. Выберите нужный вам чат.\nПосле этого <b>все сообщения, которые вы отправите, будут доставлены в " \
+    "чат, который вы выбрали</b>.\nЧтобы <b>закончить</b> переписку, введите /cancel.\nЧтобы <b>удалить</b> " \
+    "сообщение у собеседника, <b>ответьте</b> на своё сообщение командой /delete\n" \
+    "/id - Узнать <i>chat_id</i> человека для команды /chat\n" \
+    "/rnd - Случайное число <i>(по умолчанию от 1 до 6)</i>:\n<code>/rnd a</code> - случайное число от 1 до a\n" \
+    "<code>/rnd a b</code> - случайное число от a до b\n<i>Например:</i> <code>/rnd 5 10</code> - случайное число " \
+    "от 5 до 10\n/cancel - Отмена выполнения текущей команды\n<b>Также бот умеет:</b>\n• Поздравлять с днём рождения" \
+    "\n• Выбирать случайный ответ в голосованиях\n• Искать по фото (для этого ответьте на фото словами \"<code>Что " \
+    "это</code>\" или \"<code>Кто это</code>\")\n• Играть в города (для этого напишите \"<code>В города</code>\", " \
+    "выберите сложность <i>(<b>Лёгкий</b> - 500 городов, <b>Хардкор</b> - 10000 городов)</i>, и вводите город " \
+    "первым), чтобы закончить, напишите \"<code>Стоп</code>\" или \"<code>Хватит</code>\""
+
+# noinspection PyTypeChecker
+rec: vosk.KaldiRecognizer = None
+tts_model = None
+
+
+def load_ai():
+    global rec
+    global tts_model
+    rec = vosk.KaldiRecognizer(vosk.Model("model_small"), samplerate)
+    torch.set_num_threads(4)
+    # noinspection PyUnresolvedReferences
+    tts_model = torch.package.PackageImporter('tts-model.pt').load_pickle("tts_models", "model")
+    tts_model.to(torch.device('cpu'))
+    print("ai loaded")
 
 
 def save():
@@ -63,8 +94,6 @@ def save():
     bd['images'] = images
     bd['current_chat'] = current_chat
     bd['users'] = users
-    bd['active_goroda'] = active_goroda
-    bd['current_letters'] = current_letters
     bd['chat_id_my'] = chat_id_my
     bd['chat_id_pen'] = chat_id_pen
     bd['chat_msg_my'] = chat_msg_my
@@ -77,8 +106,11 @@ def save():
     ref.set(bd)
 
 
-with open('cities.json', encoding="utf-8") as f:
-    goroda = json.loads(f.read())
+with open('cities_easy.json', encoding="utf-8") as f:
+    cities_easy = json.loads(f.read())
+
+with open('cities_hard.json', encoding="utf-8") as f:
+    cities_hard = json.loads(f.read())
 
 
 class ExceptionHandler(telebot.ExceptionHandler):
@@ -87,14 +119,13 @@ class ExceptionHandler(telebot.ExceptionHandler):
 
 
 TOKEN = os.getenv("Kozlovskiy_token")
-bot = telebot.TeleBot(TOKEN)  # TODO exception_handler=ExceptionHandler()
+bot = telebot.TeleBot(TOKEN, exception_handler=ExceptionHandler())
 
 
 def start_chat(chat_id, chat):
     try:
         if chat == chat_id:
-            bot.send_message(chat_id, "<b>Нельзя писать самому себе через Козловского.</b>",
-                             'HTML')
+            bot.send_message(chat_id, "<b>Нельзя писать самому себе через Козловского.</b>", 'HTML')
             return
         if chat_id in chat_id_my:
             bot.send_message(chat_id, "<b>Вы уже пишете кому-то через Козловского.\n"
@@ -115,8 +146,7 @@ def start_chat(chat_id, chat):
                                                                  f"{chat_info.pinned_message.from_user.first_name}"))
         bot.send_message(chat_id, parse_chat(chat_info) +
                          "\n\n<b>/cancel - закончить переписку\n"
-                         "/delete - удалить сообщение у собеседника</b>",
-                         'HTML', reply_markup=markup)
+                         "/delete - удалить сообщение у собеседника</b>", 'HTML', reply_markup=markup)
         chat_id_my.append(chat_id)
         chat_id_pen.append(chat)
         current_users.append("")
@@ -128,7 +158,7 @@ def start_chat(chat_id, chat):
 
 
 def get_city_letter(str_city, i=-1):
-    if str_city[i] in goroda:
+    if str_city[i] in cities_easy:
         return str_city[i]
     return str_city[i - 1]
 
@@ -187,7 +217,7 @@ def photo_search(chat_id, msg_id, search_photo):
                          reply_to_message_id=msg_id)
         return
     results = soup.find('section', 'CbirTags').find_all('a')
-    bot.send_message(chat_id, results[0].find('span').get_text() + ", " + results[1].find('span').get_text(),
+    bot.send_message(chat_id, '\n'.join('• ' + res.find('span').get_text().capitalize() for res in results),
                      reply_to_message_id=msg_id)
 
 
@@ -238,22 +268,24 @@ def get_exist_images():
     return exist_images
 
 
-def update_user_info(user: telebot.types.Chat, exist_images):
-    chat = str(user.id)
-    users[chat]['private'] = user.type == "private"
-    users[chat]['name'] = user.title if not user.type == "private" else user.first_name + n(user.last_name, " ")
-    users[chat]['desc'] = n(user.bio) if user.type == "private" else n(user.description)
-    if user.photo is not None:
-        file_name = user.photo.small_file_id + ".jpg"
+def update_user_info(chat: telebot.types.Chat, exist_images):
+    chat_id = str(chat.id)
+    users[chat_id]['private'] = chat.type == "private"
+    users[chat_id]['name'] = chat.title if not chat.type == "private" else chat.first_name + n(chat.last_name, " ")
+    users[chat_id]['desc'] = n(chat.bio) if chat.type == "private" else n(chat.description)
+    if chat.photo is None:
+        users[chat_id]['photo_url'] = None
+    else:
+        file_name = chat.photo.small_file_id + ".jpg"
         photo_url = exist_images.get(file_name)
         if photo_url is None:
             blob = bucket.blob(file_name)
-            blob.upload_from_string(bot.download_file(bot.get_file(user.photo.small_file_id).file_path),
+            blob.upload_from_string(bot.download_file(bot.get_file(chat.photo.small_file_id).file_path),
                                     content_type='image/jpg')
             blob.make_public()
-            users[chat]['photo_url'] = blob.public_url
+            users[chat_id]['photo_url'] = blob.public_url
         else:
-            users[chat]['photo_url'] = photo_url
+            users[chat_id]['photo_url'] = photo_url
 
 
 def timer():
@@ -299,6 +331,7 @@ def new_private_cr(chat: telebot.types.Chat):
     if users.get(chat_id) is not None:
         return False
     users[chat_id] = {}
+    bot.send_message(chat_id, help_text, 'HTML')
     bot.send_video(chat_id, success_vid, caption="<b>Чем я могу помочь?</b>🤔", parse_mode="HTML")
     ai_talk("/start", str(chat.id), start="Чем я могу помочь?🤔")
     update_user_info(bot.get_chat(chat.id), get_exist_images())
