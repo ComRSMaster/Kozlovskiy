@@ -1,9 +1,12 @@
 #!/usr/bin/python3
+import mimetypes
 from io import StringIO
+from socketserver import ThreadingMixIn
 from threading import Thread
+from wsgiref import util
+from wsgiref.simple_server import make_server, WSGIServer
 
 import tools
-import webserver
 from tools import *
 
 
@@ -418,8 +421,38 @@ def ban_handler(member: telebot.types.ChatMemberUpdated):
         new_group_cr(member.chat)
 
 
-def parse_webhook_updates(json_string):
+def parse_updates(json_string):
     bot.process_new_updates([telebot.types.Update.de_json(json_string)])
+
+
+def web_app(env, response):
+    fn = env['PATH_INFO']
+    method = env['REQUEST_METHOD']
+    if method == 'GET':
+        if fn == '/':
+            fn = '/index.html'
+        if os.path.exists('website' + fn):
+            mimetype = mimetypes.guess_type(fn)[0]
+            if mimetype is not None:
+                response('200 OK', [('Content-Type', mimetype)])
+                return util.FileWrapper(open('website' + fn, "rb"))
+        response('404 Not Found', [])
+        return []
+    elif method == 'POST':
+        if fn == '/' + TOKEN and env['CONTENT_TYPE'] == 'application/json':
+            parse_updates(env['wsgi.input'].read(int(env['CONTENT_LENGTH'])).decode("utf-8"))
+            response('200 OK', [])
+            return []
+        else:
+            response('403 Forbidden', [])
+            return []
+    else:
+        response('200 OK', [])
+        return []
+
+
+class ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
+    pass
 
 
 # Запуск бота
@@ -427,9 +460,15 @@ bot.remove_webhook()
 bot.set_webhook(url=web_url + TOKEN)
 
 Thread(target=timer).start()
-webserver.parse_updates = parse_webhook_updates
 print("start")
-webserver.run_webserver(TOKEN)
 
-bot.remove_webhook()
-print("finish")
+with make_server('', 80, web_app, ThreadingWSGIServer) as server:
+    print("Запуск сервера через порт 80...")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+        bot.remove_webhook()
+        print("Сервер остановлен.")

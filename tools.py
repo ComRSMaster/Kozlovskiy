@@ -245,7 +245,7 @@ def update_user_info(chat: telebot.types.Chat):
     else:
         file_name = chat.photo.small_file_unique_id + ".jpg"
         if not os.path.isfile(
-                f'website/p/{file_name}') or chat.photo.small_file_unique_id != users[chat_id]['photo_id']:
+                f'website/p/{file_name}') or chat.photo.small_file_unique_id != users[chat_id].get('photo_id'):
             with open(f'website/p/{file_name}', 'wb') as file:
                 file.write(bot.download_file(bot.get_file(chat.photo.small_file_id).file_path))
         users[chat_id]['photo_id'] = chat.photo.small_file_unique_id
