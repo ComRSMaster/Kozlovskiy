@@ -1,17 +1,15 @@
 #!/usr/bin/python3
+import time
 import configparser
 import json
 import os
 import random
+import re
 import subprocess
 import sys
-import time
 import traceback
 from datetime import datetime
-import firebase_admin
-import vosk
-from firebase_admin import credentials, db, storage
-import torch
+
 import requests
 
 if sys.version_info < (3, 9):
@@ -22,10 +20,8 @@ else:
 import telebot
 from bs4 import BeautifulSoup
 
-content_types = [
-    "text", "audio", "document", "photo", "sticker", "video", "video_note",
-    "voice", "location", "contact", "group_chat_created", "chat_member",
-    "supergroup_chat_created", "channel_chat_created", "migrate_to_chat_id", "poll"]
+content_types = ["text", "audio", "document", "photo", "sticker", "video", "video_note", "voice",
+                 "location", "contact", "poll", "chat_member"]
 config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
 MIN_BIRTHDAY_HOUR = config.getint("Settings", "MIN_BIRTHDAY_HOUR")
@@ -35,16 +31,12 @@ calls = json.loads(config["Settings"]['calls'])
 calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
 searches = json.loads(config["Settings"]['searches'])
-samplerate = 16000
-samplerate_tts = 48000
+web_url = json.loads(config["Settings"]['web_url'])
 
 with open('db.json', encoding="utf-8") as bd_file:
     bd = json.load(bd_file)
 
-cred = credentials.Certificate("firebase-key.json")
-firebase_admin.initialize_app(cred, {'databaseURL': os.getenv("db_url"), 'storageBucket': os.getenv("storage_url")})
-ref = db.reference()
-bucket = storage.bucket()
+tts_key = os.getenv("tts_key")
 
 ignore: list = bd['ignore']
 images: dict = bd['images']
@@ -73,20 +65,8 @@ help_text = \
     "выберите сложность <i>(<b>Лёгкий</b> - 500 городов, <b>Хардкор</b> - 10000 городов)</i>, и вводите город " \
     "первым), чтобы закончить, напишите \"<code>Стоп</code>\" или \"<code>Хватит</code>\""
 
-# noinspection PyTypeChecker
-rec: vosk.KaldiRecognizer = None
-tts_model = None
-
-
-def load_ai():
-    global rec
-    global tts_model
-    rec = vosk.KaldiRecognizer(vosk.Model("model_small"), samplerate)
-    torch.set_num_threads(4)
-    # noinspection PyUnresolvedReferences
-    tts_model = torch.package.PackageImporter('tts-model.pt').load_pickle("tts_models", "model")
-    tts_model.to(torch.device('cpu'))
-    print("ai loaded")
+re_emoji = re.compile(u"[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]+",
+                      flags=re.UNICODE)
 
 
 def save():
@@ -102,8 +82,6 @@ def save():
     to_save = json.dumps(bd, ensure_ascii=False)
     with open('db.json', 'w', encoding='utf-8') as db_file1:
         db_file1.write(to_save)
-
-    ref.set(bd)
 
 
 with open('cities_easy.json', encoding="utf-8") as f:
@@ -132,21 +110,16 @@ def start_chat(chat_id, chat):
                                       "Чтобы закончить, введите /cancel</b>", 'HTML')
             return
         chat_info = bot.get_chat(chat)
-        markup = telebot.types.InlineKeyboardMarkup()
+        elem = {}
         if chat_info.photo is not None:
-            markup.add(
-                telebot.types.InlineKeyboardButton(
-                    text="Посмотреть фото профиля",
-                    callback_data="btn_photo_" + chat))
-        if chat_info.pinned_message is not None:
-            markup.add(
-                telebot.types.InlineKeyboardButton(text="Посмотреть закреп",
-                                                   callback_data=f"btn_pinned_{chat_info.pinned_message.chat.id}_"
-                                                                 f"{chat_info.pinned_message.message_id}_"
-                                                                 f"{chat_info.pinned_message.from_user.first_name}"))
+            elem["Посмотреть фото профиля"] = {'callback_data': "btn_photo_" + chat}
+        p_msg = chat_info.pinned_message
+        if p_msg is not None:
+            elem["Посмотреть закреп"] = {
+                'callback_data': f"btn_pinned_{p_msg.chat.id}_{p_msg.message_id}_{p_msg.from_user.first_name}"}
         bot.send_message(chat_id, parse_chat(chat_info) +
-                         "\n\n<b>/cancel - закончить переписку\n"
-                         "/delete - удалить сообщение у собеседника</b>", 'HTML', reply_markup=markup)
+                         "\n\n<b>/cancel - закончить переписку\n/delete - удалить сообщение у собеседника</b>", 'HTML',
+                         reply_markup=telebot.util.quick_markup(elem, row_width=3))
         chat_id_my.append(chat_id)
         chat_id_pen.append(chat)
         current_users.append("")
@@ -192,24 +165,25 @@ def ai_talk(msg_text, chat_id: str, is_private=True, args=None, start='', append
     if is_voice:
         bot.send_chat_action(chat_id, action="record_voice")
         msg_text = stt(voice_id) + ("\n" + msg_text if msg_text != "" else "")
-    else:
+    elif msg_text:
         bot.send_chat_action(chat_id, action="typing")
-    if msg_text:
-        talk.append(msg_text)
-        res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
-                            json={"instances": [{"contexts": [talk]}]}).json()
-        answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
-        if is_voice:
-            bot.send_voice(chat_id, tts(answer))
-        else:
-            bot.send_message(chat_id, answer)
-        talk.append(answer)
-        save()
+    else:
+        return
+    talk.append(msg_text)
+    res = requests.post('https://api.aicloud.sbercloud.ru/public/v2/boltalka/predict',
+                        json={"instances": [{"contexts": [talk]}]}).json()
+    answer = str(res["responses"][2:-2]).replace("%bot_name", random.choice(["Даня", "Козловский"]))
+    if is_voice:
+        bot.send_voice(chat_id, tts(answer))
+    else:
+        bot.send_message(chat_id, answer)
+    talk.append(answer)
+    save()
 
 
 def photo_search(chat_id, msg_id, search_photo):
     bot.send_chat_action(chat_id, action="typing")
-    url_pic = "https://yandex.ru/images/search?rpt=imageview&url=" + bot.get_file_url(search_photo.file_id)
+    url_pic = f"https://yandex.ru/images/search?rpt=imageview&url={bot.get_file_url(search_photo.file_id)}"
     soup = BeautifulSoup(requests.get(url_pic).text, 'lxml')
     results_vk = soup.find('div', class_='CbirSites-ItemInfo')
     if 'vk.com/id' in results_vk.find('a').get('href'):
@@ -261,40 +235,27 @@ def parse_chat(chat: telebot.types.Chat):
     return text
 
 
-def get_exist_images():
-    exist_images = {}
-    for b in bucket.list_blobs():
-        exist_images[b.name] = b.public_url
-    return exist_images
-
-
-def update_user_info(chat: telebot.types.Chat, exist_images):
+def update_user_info(chat: telebot.types.Chat):
     chat_id = str(chat.id)
     users[chat_id]['private'] = chat.type == "private"
     users[chat_id]['name'] = chat.title if not chat.type == "private" else chat.first_name + n(chat.last_name, " ")
     users[chat_id]['desc'] = n(chat.bio) if chat.type == "private" else n(chat.description)
     if chat.photo is None:
-        users[chat_id]['photo_url'] = None
+        users[chat_id]['photo_id'] = None
     else:
-        file_name = chat.photo.small_file_id + ".jpg"
-        photo_url = exist_images.get(file_name)
-        if photo_url is None:
-            blob = bucket.blob(file_name)
-            blob.upload_from_string(bot.download_file(bot.get_file(chat.photo.small_file_id).file_path),
-                                    content_type='image/jpg')
-            blob.make_public()
-            users[chat_id]['photo_url'] = blob.public_url
-        else:
-            users[chat_id]['photo_url'] = photo_url
+        file_name = chat.photo.small_file_unique_id + ".jpg"
+        if not os.path.isfile(
+                f'website/p/{file_name}') or chat.photo.small_file_unique_id != users[chat_id]['photo_id']:
+            with open(f'website/p/{file_name}', 'wb') as file:
+                file.write(bot.download_file(bot.get_file(chat.photo.small_file_id).file_path))
+        users[chat_id]['photo_id'] = chat.photo.small_file_unique_id
 
 
 def timer():
     while True:
         now = datetime.now(ZoneInfo("Europe/Moscow"))
-        exist_images = get_exist_images()
         for u in users:
-            update_user_info(bot.get_chat(u), exist_images)
-
+            update_user_info(bot.get_chat(u))
             birthday: str = users[u].get("birthday")
             if birthday is None:
                 continue
@@ -322,21 +283,18 @@ def new_group_cr(chat: telebot.types.Chat):
     markup.add(telebot.types.InlineKeyboardButton(text="Ignore", callback_data="btn_ignore_" + chat_id))
     bot.send_message(admin_chat, "<b>Новая группа: " + chat.title + "  <pre>" +
                      chat_id + "</pre></b>", 'HTML', reply_markup=markup)
-    update_user_info(bot.get_chat(chat.id), get_exist_images())
+    update_user_info(bot.get_chat(chat.id))
     save()
 
 
 def new_private_cr(chat: telebot.types.Chat):
     chat_id = str(chat.id)
-    if users.get(chat_id) is not None:
-        return False
     users[chat_id] = {}
     bot.send_message(chat_id, help_text, 'HTML')
     bot.send_video(chat_id, success_vid, caption="<b>Чем я могу помочь?</b>🤔", parse_mode="HTML")
     ai_talk("/start", str(chat.id), start="Чем я могу помочь?🤔")
-    update_user_info(bot.get_chat(chat.id), get_exist_images())
+    update_user_info(bot.get_chat(chat.id))
     save()
-    return True
 
 
 def get_voice_id(msg: telebot.types.Message):
@@ -362,30 +320,42 @@ def get_voice_id(msg: telebot.types.Message):
 
 
 def stt(file_id: str, reply_to_message=None):
-    global rec
     stats = reply_to_message is not None
     progress_id = -1
     if stats:
         progress_id = bot.reply_to(reply_to_message, "Расшифровка...").message_id
 
-    command = [
-        f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else 'ffmpeg',
-        '-n', '-i', bot.get_file_url(file_id),
-        '-ac', '1', '-ar', str(samplerate), '-acodec', 'pcm_s16le', '-f', 's16le', 'pipe:'
-    ]
-    proc = subprocess.Popen(command, bufsize=samplerate * 8, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    cmd = [f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'{sys.path[0]}/ffmpeg', '-n', '-i',
+           bot.get_file_url(file_id), '-ac', '1', '-ar', '48000', '-acodec', 'pcm_s16le', '-f', 's16le', 'pipe:']
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
-    result = ''
-    while rec is None:
-        time.sleep(0.5)
-    while proc.poll() is None:
-        audio = proc.stdout.read(samplerate * 8)
-        if rec.AcceptWaveform(audio):
-            result += json.loads(rec.Result())['text']
+    try:
+        raw = proc.stdout.read()
+        if stats:
+            bot.edit_message_text("Расшифровка... 50%", reply_to_message.chat.id, progress_id)
 
-    result += json.loads(rec.FinalResult())['text']
-    if result == '':
+        url = "http://www.google.com/speech-api/v2/recognize?client=chromium&lang=ru-RU&" \
+              "key=AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw&pFilter=0"
+        response_text = requests.post(url, data=raw, headers={"Content-Type": "audio/l16; rate=48000;"}).text
+        actual_result = []
+        for line in response_text.split("\n"):
+            if not line:
+                continue
+            current_result = json.loads(line)["result"]
+            if len(current_result) != 0:
+                actual_result = current_result[0]
+                break
+        if not isinstance(actual_result, dict) or len(actual_result.get("alternative", [])) == 0:
+            result = ''
+        else:
+            best_hypothesis = max(actual_result["alternative"], key=lambda alternative: alternative[
+                "confidence"]) if "confidence" in actual_result["alternative"] else actual_result["alternative"][0]
+            result = '' if "transcript" not in best_hypothesis else best_hypothesis["transcript"]
+    except requests.exceptions.RequestException as e:
+        result = f"❌Возникла ошибка: {e}" if stats else "Скажи что-нибудь"
+    if not result:
         result = "Тут ничего нет🤔" if stats else "Скажи что-нибудь"
+
     if stats:
         bot.edit_message_text(result, reply_to_message.chat.id, progress_id)
 
@@ -393,15 +363,8 @@ def stt(file_id: str, reply_to_message=None):
 
 
 def tts(text: str):
-    # noinspection PyUnresolvedReferences
-    audio = tts_model.apply_tts(text=text, speaker='eugene')
-    command = [
-        f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'ffmpeg',
-        '-n', '-f', 's16le', '-ac', '1',
-        '-ar', str(samplerate_tts), '-i', 'pipe:',
-        '-ac', '1', '-ar', str(samplerate_tts),
-        '-acodec', 'libopus', '-f', 'opus', 'pipe:']
-    proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    out = proc.communicate(input=(audio * 32767).numpy().astype('int16').tobytes())[0]
-
-    return out
+    cmd = [f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'{sys.path[0]}/ffmpeg', '-n', '-i',
+           f"https://api.voicerss.org/?key={tts_key}&hl=ru-RU&v=Peter&r=2&f=24khz_16bit_mono&"
+           f"src={re_emoji.sub(r'', text)}", '-ac', '1', '-ar', '24000', '-acodec', 'libopus', '-f', 'opus', 'pipe:']
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    return proc.communicate()[0]

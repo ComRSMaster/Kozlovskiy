@@ -1,8 +1,5 @@
 beautifulsoup4
 lxml
 tzdata
-firebase_admin
 pyTelegramBotAPI
 requests
-vosk
-torch

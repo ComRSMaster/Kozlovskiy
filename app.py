@@ -1,22 +1,16 @@
 #!/usr/bin/python3
-import re
 from io import StringIO
 from threading import Thread
 
-import telebot.types
-
 import tools
+import webserver
 from tools import *
 
 
 @bot.message_handler(commands=['start'])
 def command_start(msg: telebot.types.Message):
-    if msg.chat.type == "private":
-        if new_private_cr(msg.chat):
-            chat_management(msg)
-            return
-    ai_talk(msg.text, str(msg.chat.id), start="О чём поговорим?🤔", send=True)
-    chat_management(msg)
+    if chat_management(msg):
+        ai_talk(msg.text, str(msg.chat.id), start="О чём поговорим?🤔", send=True)
 
 
 @bot.message_handler(commands=['help'])
@@ -34,8 +28,7 @@ def command_chat(msg: telebot.types.Message):
                          "<i>Использование:</i> /chat <i>chat_id</i>\n"
                          "/id - получить <i>chat_id</i> <b>любого</b> человека.\n"
                          "<b>⬇ Нажмите кнопку ниже для выбора чата ⬇</b>", "HTML",
-            reply_markup=telebot.types.InlineKeyboardMarkup().add(
-                telebot.types.InlineKeyboardButton(text="Выбрать чат 💬", switch_inline_query_current_chat="")))
+            reply_markup=telebot.util.quick_markup({'Выбрать чат 💬': {'switch_inline_query_current_chat': ''}}))
     else:
         start_chat(str(msg.chat.id), args[1])
     chat_management(msg)
@@ -93,6 +86,7 @@ def command_delete(msg: telebot.types.Message):
 def command_kill_bot(msg: telebot.types.Message):
     # kill bot (admin only)
     if msg.chat.id == admin_chat:
+        bot.remove_webhook()
         bot.send_message(msg.chat.id, "Бот успешно отключен")
         print("bot killed")
         # noinspection PyProtectedMember
@@ -141,24 +135,7 @@ def command_cancel(msg: telebot.types.Message):
 
 
 def chat_management(msg: telebot.types.Message):
-    if msg.content_type in ["group_chat_created", "supergroup_chat_created", "channel_chat_created"]:
-        new_group_cr(msg.chat)
-    if msg.content_type == "migrate_to_chat_id":
-        users[str(msg.migrate_to_chat_id)] = users.pop(str(msg.chat.id))
-        try:
-            ignore[ignore.index(str(msg.chat.id))] = str(msg.migrate_to_chat_id)
-        except ValueError:
-            pass
-        try:
-            chat_id_my[chat_id_my.index(str(msg.chat.id))] = str(msg.migrate_to_chat_id)
-        except ValueError:
-            pass
-        try:
-            chat_id_pen[chat_id_pen.index(str(msg.chat.id))] = str(msg.migrate_to_chat_id)
-        except ValueError:
-            pass
-        save()
-    elif str(msg.chat.id) not in ignore:  # copy messages to admin
+    if str(msg.chat.id) not in ignore:  # copy messages to admin
         if str(msg.chat.id) != tools.current_chat:
             tools.current_chat = str(msg.chat.id)
             save()
@@ -190,6 +167,47 @@ def chat_management(msg: telebot.types.Message):
             save()
     except ValueError:
         pass
+    if msg.chat.type == "private" and users.get(str(msg.chat.id)) is None:
+        new_private_cr(msg.chat)
+        return False
+    else:
+        return True
+
+
+@bot.message_handler(content_types=["migrate_to_chat_id"])
+def migrate_to_chat_id(msg: telebot.types.Message):
+    users[str(msg.migrate_to_chat_id)] = users.pop(str(msg.chat.id))
+    try:
+        ignore[ignore.index(str(msg.chat.id))] = str(msg.migrate_to_chat_id)
+    except ValueError:
+        pass
+    try:
+        chat_id_my[chat_id_my.index(str(msg.chat.id))] = str(msg.migrate_to_chat_id)
+    except ValueError:
+        pass
+    try:
+        chat_id_pen[chat_id_pen.index(str(msg.chat.id))] = str(msg.migrate_to_chat_id)
+    except ValueError:
+        pass
+    save()
+
+
+@bot.message_handler(content_types=["new_chat_title", "new_chat_photo", "delete_chat_photo"])
+def chat_info_changed(msg: telebot.types.Message):
+    if msg.new_chat_title is not None:
+        users[str(msg.chat.id)]['name'] = msg.new_chat_title
+    if msg.new_chat_photo is not None:
+        users[str(msg.chat.id)]['photo_id'] = msg.new_chat_photo[0].file_unique_id
+        with open(f'website/p/{msg.new_chat_photo[0].file_unique_id}.jpg', 'wb') as file:
+            file.write(bot.download_file(bot.get_file(msg.new_chat_photo[0].file_id).file_path))
+    if msg.delete_chat_photo:
+        users[str(msg.chat.id)]['photo_id'] = None
+    save()
+
+
+@bot.message_handler(content_types=["group_chat_created", "supergroup_chat_created", "channel_chat_created"])
+def new_chat_created(msg: telebot.types.Message):
+    new_group_cr(msg.chat)
 
 
 @bot.message_handler(content_types=content_types)
@@ -201,21 +219,21 @@ def chatting(msg: telebot.types.Message):
     if msg.content_type == "poll":
         bot.send_message(msg.chat.id, random.choice(msg.poll.options).text, reply_to_message_id=msg.id)
     if users[str(msg.chat.id)].pop("getting_id", 0):
+        save()
         markup = telebot.types.InlineKeyboardMarkup()
         if msg.content_type == 'contact':
-            user_id = str(msg.contact.user_id)
-            if user_id == "None":
+            user_id = msg.contact.user_id
+            if not user_id:
                 bot.send_message(msg.chat.id, "Этого человека нет в Telegram.")
             else:
-                markup.add(telebot.types.InlineKeyboardButton(text="Начать чат", callback_data="btn_chat_" + user_id))
+                markup.add(telebot.types.InlineKeyboardButton(text="Начать чат", callback_data=f"btn_chat_{user_id}"))
                 bot.send_message(msg.chat.id, user_id, reply_markup=markup)
             return
         elif msg.forward_from is not None:
-            chat_id = str(msg.forward_from.id)
-            markup.add(telebot.types.InlineKeyboardButton(text="Начать чат", callback_data="btn_chat_" + chat_id))
+            chat_id = msg.forward_from.id
+            markup.add(telebot.types.InlineKeyboardButton(text="Начать чат", callback_data=f"btn_chat_{chat_id}"))
             bot.send_message(msg.chat.id, chat_id, reply_markup=markup)
             return
-        save()
     try:
         my_index = chat_id_my.index(str(msg.chat.id))  # мы
         reply = None
@@ -380,8 +398,9 @@ def query_photo(inline_query):
         index += 1
         results.append(telebot.types.InlineQueryResultArticle(
             index, users[u]['name'], telebot.types.InputTextMessageContent("/chat " + u),
-            description=users[u]['desc'] + "\nНажмите, чтобы написать в " + (
-                "этот чат" if users[u]['private'] else "эту группу"), thumb_url=users[u]['photo_url']))
+            description=users[u]['desc'] + "\nНажмите, чтобы написать " + (
+                "этому человеку" if users[u]['private'] else "в эту группу"),
+            thumb_url=None if users[u]['photo_id'] is None else f'{web_url}p/{users[u]["photo_id"]}.jpg'))
     bot.answer_inline_query(inline_query.id, results)
 
 
@@ -399,8 +418,18 @@ def ban_handler(member: telebot.types.ChatMemberUpdated):
         new_group_cr(member.chat)
 
 
+def parse_webhook_updates(json_string):
+    bot.process_new_updates([telebot.types.Update.de_json(json_string)])
+
+
 # Запуск бота
+bot.remove_webhook()
+bot.set_webhook(url=web_url + TOKEN)
+
 Thread(target=timer).start()
-Thread(target=load_ai).start()
+webserver.parse_updates = parse_webhook_updates
 print("start")
-bot.infinity_polling(timeout=60, long_polling_timeout=60)
+webserver.run_webserver(TOKEN)
+
+bot.remove_webhook()
+print("finish")
