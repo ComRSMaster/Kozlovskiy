@@ -423,7 +423,6 @@ def parse_webhook_updates(json_string):
 
 
 # Запуск бота
-bot.remove_webhook()
 bot.set_webhook(url=web_url + TOKEN)
 
 Thread(target=timer).start()

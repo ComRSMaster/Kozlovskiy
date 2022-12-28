@@ -2,7 +2,9 @@
 from mimetypes import guess_type
 from http import HTTPStatus
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socket import AF_INET6
 from socketserver import ThreadingMixIn
+import os
 
 token = ''
 
@@ -49,13 +51,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class ThreadingSimpleServer(ThreadingMixIn, HTTPServer):
-    pass
+    address_family = AF_INET6
 
 
 def run_webserver(access_token):
     global token
     token = '/' + access_token
-    server = ThreadingSimpleServer(('0.0.0.0', 80), Handler)
+    server = ThreadingSimpleServer((os.getenv("IP"), int(os.getenv("PORT"))), Handler)
 
     try:
         server.serve_forever()
