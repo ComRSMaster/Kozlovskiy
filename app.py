@@ -456,7 +456,6 @@ class ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
 
 
 # Запуск бота
-bot.remove_webhook()
 bot.set_webhook(url=web_url + TOKEN)
 
 Thread(target=timer).start()
