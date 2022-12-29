@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import logging
 import time
 import configparser
 import json
@@ -7,8 +8,8 @@ import random
 import re
 import subprocess
 import sys
-import traceback
 from datetime import datetime
+from io import StringIO
 
 import requests
 
@@ -31,17 +32,19 @@ calls = json.loads(config["Settings"]['calls'])
 calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
 searches = json.loads(config["Settings"]['searches'])
-web_url = json.loads(config["Settings"]['web_url'])
 
 with open('db.json', encoding="utf-8") as bd_file:
     bd = json.load(bd_file)
 
 tts_key = os.getenv("tts_key")
+web_url = os.getenv("web_url")
+fb_url = os.getenv("fb_url")
 
 ignore: list = bd['ignore']
 images: dict = bd['images']
 current_chat = bd['current_chat']
 users: dict[str, dict] = bd['users']
+abstracts: dict[str, dict] = bd['abstracts']
 chat_id_my = bd['chat_id_my']
 chat_id_pen: list = bd['chat_id_pen']
 chat_msg_my = bd['chat_msg_my']
@@ -50,7 +53,8 @@ current_users = bd['current_users']
 help_text = \
     "/start - Начать разговор с ИИ. <i>Также можно просто написать \"<code>Привет</code>\", \"<code>Даня</code>\" " \
     "или \"<code>Козловский</code>\".</i>\nЧтобы закончить, напишите \"<code>Пока</code>\", \"<code>Стоп</code>\" " \
-    "или \"<code>Хватит</code>\"\n/help - Помощь по функционалу бота <i>(это сообщение)</i>\n" \
+    "или \"<code>Хватит</code>\"\n" \
+    "/help - Помощь по функционалу бота <i>(это сообщение)</i>\n" \
     "/d - Расшифровка голосовых/видео сообщений: для этого нужно <b>ответить</b> на такое сообщение этой командой\n" \
     "/chat - Анонимная переписка от имени Козловского:\n1. Введите эту команду\n2. Нажмите кнопку \"<i>Выбрать чат" \
     "</i>\"\n3. Выберите нужный вам чат.\nПосле этого <b>все сообщения, которые вы отправите, будут доставлены в " \
@@ -59,12 +63,17 @@ help_text = \
     "/id - Узнать <i>chat_id</i> человека для команды /chat\n" \
     "/rnd - Случайное число <i>(по умолчанию от 1 до 6)</i>:\n<code>/rnd a</code> - случайное число от 1 до a\n" \
     "<code>/rnd a b</code> - случайное число от a до b\n<i>Например:</i> <code>/rnd 5 10</code> - случайное число " \
-    "от 5 до 10\n/cancel - Отмена выполнения текущей команды\n<b>Также бот умеет:</b>\n• Поздравлять с днём рождения" \
-    "\n• Выбирать случайный ответ в голосованиях\n• Искать по фото (для этого ответьте на фото словами \"<code>Что " \
+    "от 5 до 10\n" \
+    "/books - Открыть базу конспектов и готовых билетов\n" \
+    "/cancel - Отмена выполнения текущей команды\n" \
+    "<b>Также бот умеет:</b>\n• Поздравлять с днём рождения\n• Выбирать случайный ответ в голосованиях\n" \
+    "• Искать по фото (для этого ответьте на фото словами \"<code>Что " \
     "это</code>\" или \"<code>Кто это</code>\")\n• Играть в города (для этого напишите \"<code>В города</code>\", " \
     "выберите сложность <i>(<b>Лёгкий</b> - 500 городов, <b>Хардкор</b> - 10000 городов)</i>, и вводите город " \
     "первым), чтобы закончить, напишите \"<code>Стоп</code>\" или \"<code>Хватит</code>\""
-
+book_orig_text = "<b>📕Конспекты и готовые билеты📙</b>\n\n" \
+                 "Выбери нужный класс, " \
+                 "чтобы <i>найти</i> или <i>выложить</i> нужный конспект"
 re_emoji = re.compile(u"[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]+",
                       flags=re.UNICODE)
 
@@ -82,6 +91,8 @@ def save():
     to_save = json.dumps(bd, ensure_ascii=False)
     with open('db.json', 'w', encoding='utf-8') as db_file1:
         db_file1.write(to_save)
+    requests.put(f'{fb_url}.json', data=to_save.encode("utf-8"),
+                 headers={"content-type": "application/json; charset=UTF-8"})
 
 
 with open('cities_easy.json', encoding="utf-8") as f:
@@ -90,10 +101,15 @@ with open('cities_easy.json', encoding="utf-8") as f:
 with open('cities_hard.json', encoding="utf-8") as f:
     cities_hard = json.loads(f.read())
 
+log_stream = StringIO()
+logging.basicConfig(stream=log_stream, level=logging.WARNING)
+
 
 class ExceptionHandler(telebot.ExceptionHandler):
     def handle(self, exception):
-        bot.send_message(admin_chat, "ОШИБКА:\n" + traceback.format_exc())
+        telebot.logger.error(exception, exc_info=True)
+        bot.send_message(admin_chat, "ОШИБКА:\n" + log_stream.getvalue())
+        log_stream.truncate(0)
 
 
 TOKEN = os.getenv("Kozlovskiy_token")

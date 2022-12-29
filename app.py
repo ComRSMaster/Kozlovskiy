@@ -1,12 +1,10 @@
 #!/usr/bin/python3
-import mimetypes
-from io import StringIO
-from socketserver import ThreadingMixIn
 from threading import Thread
-from wsgiref import util
-from wsgiref.simple_server import make_server, WSGIServer
+
+import telebot.types
 
 import tools
+import webserver
 from tools import *
 
 
@@ -19,6 +17,56 @@ def command_start(msg: telebot.types.Message):
 @bot.message_handler(commands=['help'])
 def command_help(msg: telebot.types.Message):
     bot.send_message(msg.chat.id, help_text, 'HTML')
+    chat_management(msg)
+
+
+@bot.message_handler(commands=['books'])
+def command_help(msg: telebot.types.Message):
+    bot.send_message(msg.chat.id, book_orig_text, 'HTML',
+                     reply_markup=telebot.util.quick_markup(
+                         {grade: {'callback_data': f'btn_grade_{grade}'} for grade in abstracts}, 5))
+    chat_management(msg)
+
+
+@bot.message_handler(commands=['done'])
+def command_help(msg: telebot.types.Message):
+    if "wait_for_done" in users[str(msg.chat.id)]:
+        if 'z' in users[str(msg.chat.id)]["wait_for_done"]:
+            book_data = users[str(msg.chat.id)]["wait_for_done"]
+            grade, subject, book = book_data['n']
+            unix = book_data['d'] if 'd' in book_data else msg.date
+            book_orig = f'{book} ({datetime.fromtimestamp(unix, ZoneInfo("Europe/Moscow")).year})'
+            book = book_orig
+            i = 1
+            while book in abstracts[grade][subject]:
+                book = f'{book_orig} {i}'
+                i += 1
+            abstracts[grade][subject][book] = {}
+            abstracts[grade][subject][book]["id"] = book_data["id"]
+            abstracts[grade][subject][book]["a"] = book_data["z"]
+            abstracts[grade][subject][book]["t"] = unix
+            bot.send_message(msg.chat.id,
+                             f'<b>Ваш конспект "{book}" успешно выложен!\n🎓 {grade} класс, {subject}</b>', 'HTML',
+                             reply_markup=telebot.types.ReplyKeyboardRemove())
+            users[str(msg.chat.id)].pop("wait_for_done")
+            users[str(msg.chat.id)].pop("getting_id")
+        else:
+            users[str(msg.chat.id)]["getting_id"] = 2
+            users[str(msg.chat.id)]["wait_for_done"]['n'] = users[str(msg.chat.id)].pop("wait_for_book")
+            users[str(msg.chat.id)]["wait_for_done"]['z'] = str(msg.chat.id)
+            markup = telebot.types.ReplyKeyboardMarkup(
+                input_field_placeholder="Чей конспект?", row_width=1, resize_keyboard=True).add(
+                telebot.types.KeyboardButton(
+                    f'{msg.from_user.id}; {msg.from_user.first_name + n(msg.from_user.last_name, " ")}  (вы)'),
+                *[telebot.types.KeyboardButton(f'{a}; {name}') for a, name in users[
+                    str(msg.chat.id)]["wait_for_done"]['a'].items()])
+            bot.send_message(
+                msg.chat.id,
+                "От имени кого ты хочешь выложить конспект?\nВыбери внизу, или поделись со мной "
+                "контактом этого человека, или перешли от него любое сообщение, или напиши его имя",
+                reply_markup=markup)
+        save()
+
     chat_management(msg)
 
 
@@ -51,7 +99,9 @@ def command_d(msg: telebot.types.Message):
     file_id = get_voice_id(msg)
     if file_id is None:
         bot.send_message(msg.chat.id,
-                         "<b>Ответьте на голосовое/видео сообщение командой /d, чтобы его расшифровать.</b>", 'HTML')
+                         "<b>Ответьте на голосовое/видео сообщение командой /d, чтобы его расшифровать.</b>"
+                         "\n<i>Если вы сделали всё правильно и видите это сообщение, "
+                         "то перешлите сюда это голосовое</i>", 'HTML')
     else:
         stt(file_id, msg.reply_to_message)
     chat_management(msg)
@@ -119,8 +169,12 @@ def command_exec(msg: telebot.types.Message):
 
 @bot.message_handler(commands=['cancel'])
 def command_cancel(msg: telebot.types.Message):
-    if users[str(msg.chat.id)].pop("getting_id", 0):
-        bot.send_message(msg.chat.id, "Всё отменяю")
+    a = users[str(msg.chat.id)].pop("getting_id", 0)
+    b = users[str(msg.chat.id)].pop("wait_for_book_name", 0)
+    c = users[str(msg.chat.id)].pop("wait_for_book", 0)
+    d = users[str(msg.chat.id)].pop("wait_for_done", 0)
+    if a or b or c or d:
+        bot.send_message(msg.chat.id, "<b>Всё отменяю!</b>", 'HTML', reply_markup=telebot.types.ReplyKeyboardRemove())
         save()
     else:
         try:
@@ -133,7 +187,7 @@ def command_cancel(msg: telebot.types.Message):
             bot.send_message(msg.chat.id, "Конец переписки")
             save()
         except ValueError:
-            bot.send_message(msg.chat.id, "Я совершенно свободен")
+            bot.send_message(msg.chat.id, "Я совершенно свободен", reply_markup=telebot.types.ReplyKeyboardRemove())
     chat_management(msg)
 
 
@@ -221,21 +275,105 @@ def chatting(msg: telebot.types.Message):
     # voter
     if msg.content_type == "poll":
         bot.send_message(msg.chat.id, random.choice(msg.poll.options).text, reply_to_message_id=msg.id)
-    if users[str(msg.chat.id)].pop("getting_id", 0):
+    if "wait_for_book_name" in users[str(msg.chat.id)]:
+        name = n(msg.text) + n(msg.caption)
+        if name:
+            grade, subject = users[str(msg.chat.id)]["wait_for_book_name"]
+            users[str(msg.chat.id)]["wait_for_book"] = (grade, subject, name)
+            bot.send_message(msg.chat.id, f"Конспект успешно назван: <b>{name}</b>", 'HTML')
+            bot.send_message(msg.chat.id, f"<b>Теперь отправь файлы, фото, или ссылку с готовым конспектом</b>", 'HTML',
+                             reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь конспект"))
+            users[str(msg.chat.id)].pop("wait_for_book_name")
+            save()
+        else:
+            bot.send_message(msg.chat.id, "Попробуй назвать свой конспект ещё раз нормально")
+        return
+    elif "wait_for_book" in users[str(msg.chat.id)]:
+        grade, subject, book = users[str(msg.chat.id)]["wait_for_book"]
+        if "wait_for_done" not in users[str(msg.chat.id)]:
+            users[str(msg.chat.id)]["wait_for_done"] = {}
+            users[str(msg.chat.id)]["wait_for_done"]['id'] = {}
+            users[str(msg.chat.id)]["wait_for_done"]['id']['d'] = []
+            users[str(msg.chat.id)]["wait_for_done"]['id']['p'] = []
+            users[str(msg.chat.id)]["wait_for_done"]['id']['u'] = ''
+            users[str(msg.chat.id)]["wait_for_done"]['data'] = (grade, subject, book)
+            users[str(msg.chat.id)]["wait_for_done"]['a'] = {}
+            users[str(msg.chat.id)]["wait_for_done"]['g'] = ''
+        if msg.content_type == "photo":
+            users[str(msg.chat.id)]["wait_for_done"]['id']['p'].append(msg.photo[-1].file_id)
+        elif msg.content_type == "document":
+            users[str(msg.chat.id)]["wait_for_done"]['id']['d'].append(msg.document.file_id)
+        elif msg.content_type == "text" and msg.entities is not None and any(e.type == 'url' for e in msg.entities):
+            users[str(msg.chat.id)]["wait_for_done"]['id']['u'] += msg.text + '\n\n'
+        else:
+            bot.send_message(msg.chat.id, "<b>В конспекты можно отправлять только файлы, "
+                                          "ссылки, фото или фото без сжатия!</b>", 'HTML')
+            save()
+            return
+        if msg.forward_from is not None:
+            if msg.forward_from.id != msg.from_user.id:
+                users[str(msg.chat.id)]["wait_for_done"]['a'][
+                    msg.forward_from.id] = msg.forward_from.first_name + n(msg.forward_from.last_name, " ")
+            users[str(msg.chat.id)]["wait_for_done"]['d'] = msg.forward_date
+        if msg.media_group_id != users[str(msg.chat.id)]["wait_for_done"]['g']:
+            bot.send_message(msg.chat.id, "<b>Чтобы выложить конспект, используй команду /done</b>", 'HTML')
+        users[str(msg.chat.id)]["wait_for_done"]['g'] = msg.media_group_id
         save()
-        markup = telebot.types.InlineKeyboardMarkup()
+        return
+    elif "getting_id" in users[str(msg.chat.id)]:
+        getting_id = users[str(msg.chat.id)]["getting_id"]
+        if getting_id == 1:
+            users[str(msg.chat.id)].pop("getting_id")
+            save()
+            markup = telebot.types.InlineKeyboardMarkup()
+        else:
+            markup = None
         if msg.content_type == 'contact':
-            user_id = msg.contact.user_id
-            if not user_id:
+            chat_id = msg.contact.user_id
+            if not chat_id:
                 bot.send_message(msg.chat.id, "Этого человека нет в Telegram.")
             else:
-                markup.add(telebot.types.InlineKeyboardButton(text="Начать чат", callback_data=f"btn_chat_{user_id}"))
-                bot.send_message(msg.chat.id, user_id, reply_markup=markup)
+                if getting_id == 1:
+                    markup.add(telebot.types.InlineKeyboardButton(text="Начать чат",
+                                                                  callback_data=f"btn_chat_{chat_id}"))
+                    bot.send_message(msg.chat.id, chat_id, reply_markup=markup)
+                else:
+                    author_name = f'<a href="tg://user?id={chat_id}">' \
+                                  f'{msg.contact.first_name + n(msg.contact.last_name, " ")}</a>'
+                    bot.send_message(msg.chat.id, f"Конспект будет выложен от: <b>{author_name}</b> ?\n"
+                                                  f"/done - выложить", 'HTML')
+                    users[str(msg.chat.id)]["wait_for_done"]['z'] = str(chat_id)
+                    save()
             return
         elif msg.forward_from is not None:
             chat_id = msg.forward_from.id
-            markup.add(telebot.types.InlineKeyboardButton(text="Начать чат", callback_data=f"btn_chat_{chat_id}"))
-            bot.send_message(msg.chat.id, chat_id, reply_markup=markup)
+            if getting_id == 1:
+                markup.add(telebot.types.InlineKeyboardButton(text="Начать чат",
+                                                              callback_data=f"btn_chat_{chat_id}"))
+                bot.send_message(msg.chat.id, chat_id, reply_markup=markup)
+            else:
+                author_name = f'<a href="tg://user?id={chat_id}">' \
+                              f'{msg.forward_from.first_name + n(msg.forward_from.last_name, " ")}</a>' \
+                              f' {n(msg.forward_from.username, "@")}'
+                bot.send_message(msg.chat.id, f"Конспект будет выложен от: <b>{author_name}</b>\n"
+                                              f"/done - выложить", 'HTML')
+                users[str(msg.chat.id)]["wait_for_done"]['z'] = str(chat_id)
+                save()
+            return
+        elif getting_id == 2:
+            if msg.content_type == 'text':
+                name = msg.text
+                chat_id = name
+                ids = name.find('; ')
+                if ids != -1:
+                    chat_id = name[:ids]
+                    name = name[ids + 2:]
+                bot.send_message(msg.chat.id, f"Конспект будет выложен от: <b>{name}</b> ?\n"
+                                              f"/done - выложить", 'HTML')
+                users[str(msg.chat.id)]["wait_for_done"]["z"] = chat_id
+                save()
+            else:
+                bot.send_message(msg.chat.id, "Попробуй ещё раз")
             return
     try:
         my_index = chat_id_my.index(str(msg.chat.id))  # мы
@@ -266,7 +404,7 @@ def chatting(msg: telebot.types.Message):
     if 'letter' in users[str(msg.chat.id)]:
         if 'complex_msg' in users[str(msg.chat.id)]:
             bot.edit_message_text(
-                f"<b>Вы начали игру в города.</b>\n<i>Начинайте первым!</i>\n\n"
+                f"<b>Запущена игра в города.</b>\n<i>Начинай первым!</i>\n\n"
                 f"Сложность: <b>{'ХАРДКОР' if users[str(msg.chat.id)]['complex'] == 'h' else 'ЛЕГКО'}</b>",
                 msg.chat.id, users[str(msg.chat.id)]['complex_msg'], parse_mode="HTML")
             users[str(msg.chat.id)].pop('complex_msg')
@@ -296,8 +434,8 @@ def chatting(msg: telebot.types.Message):
         users[str(msg.chat.id)]['letter'] = ''
         users[str(msg.chat.id)]['complex'] = 'e'
         users[str(msg.chat.id)]['complex_msg'] = bot.send_message(
-            msg.chat.id, "<b>Вы начали игру в города.</b>\n<i>Начинайте первым!</i>\n\n"
-                         "Сложность: <b>ЛЕГКО</b>\n⬇<i>Выберите сложность⬇</i>", "HTML",
+            msg.chat.id, "<b>Запущена игра в города.</b>\n<i>Начинай первым!</i>\n\n"
+                         "Сложность: <b>ЛЕГКО</b>\n⬇<i>Выбери сложность⬇</i>", "HTML",
             reply_markup=telebot.util.quick_markup({"ЛЕГКО👌": {'callback_data': 'btn_complex_e'},
                                                     "🔥ХАРДКОР🔥": {'callback_data': 'btn_complex_h'}})).message_id
         save()
@@ -314,16 +452,88 @@ def query(call: telebot.types.CallbackQuery):
         users[str(call.message.chat.id)]['complex'] = comp
         bot.answer_callback_query(call.id, "Выбрана сложность: " + ("ХАРДКОР" if comp == 'h' else "ЛЕГКО"))
         bot.edit_message_text(
-            f"<b>Вы начали игру в города.</b>\n<i>Начинайте первым!</i>\n\n"
-            f"Сложность: <b>{'ХАРДКОР' if comp == 'h' else 'ЛЕГКО'}</b>\n⬇<i>Выберите сложность⬇</i>",
+            f"<b>Запущена игра в города.</b>\n<i>Начинай первым!</i>\n\n"
+            f"Сложность: <b>{'ХАРДКОР' if comp == 'h' else 'ЛЕГКО'}</b>\n⬇<i>Выбери сложность⬇</i>",
             call.message.chat.id, users[str(call.message.chat.id)]['complex_msg'], parse_mode="HTML",
             reply_markup=telebot.util.quick_markup({"ЛЕГКО👌": {'callback_data': 'btn_complex_e'},
                                                     "🔥ХАРДКОР🔥": {'callback_data': 'btn_complex_h'}}))
-    if data.startswith("btn_chat_"):
-        start_chat(str(call.message.chat.id), data.split("btn_chat_")[1])
+    elif data.startswith("btn_grade") or data.startswith("btn_subj_back"):
+        grade = data[data.rfind("_") + 1:]
+        subjects = {"◀ Назад": {'callback_data': 'btn_back'}}
+        subjects.update({f'{subject} ({len(abstracts[grade][subject])})': {
+            'callback_data': f'btn_subject_{grade}_{subject}'} for subject in abstracts[grade]})
+        bot.edit_message_text(
+            "<b>📕Конспекты и готовые билеты📙</b>\n\n"
+            f"<b>🎓 Класс:</b> {grade}\nТеперь выберите нужный предмет, "
+            "чтобы <i>найти</i> или <i>выложить</i> нужный конспект", call.message.chat.id, call.message.message_id,
+            parse_mode='HTML', reply_markup=telebot.util.quick_markup(subjects))
+    elif data.startswith("btn_subject") or data.startswith("btn_bok_back"):
+        fs = data.rfind("_")
+        subject = data[fs + 1:]
+        grade = data[data[:fs].rfind("_") + 1:fs]
+        markup = telebot.types.InlineKeyboardMarkup(row_width=1).add(
+            telebot.types.InlineKeyboardButton("◀ Назад", callback_data=f'btn_subj_back_{grade}'),
+            telebot.types.InlineKeyboardButton("Обновить 🔄️", callback_data=f'btn_subject_{grade}_{subject}'),
+            telebot.types.InlineKeyboardButton(
+                "Выложить 🔼", callback_data=f'btn_upload_{grade}_{subject}'), row_width=3).add(
+            *[telebot.types.InlineKeyboardButton(
+                book, callback_data=f'btn_book_{grade}_{subject}_{book}') for book in abstracts[grade][subject]])
+        try:
+            bot.edit_message_text(
+                f"<b>📕Конспекты и готовые билеты📙</b>\n\n<b>🎓 Класс:</b> {grade}\n<b>📗 {subject}</b>\n\n"
+                f"<b>Найдено конспектов:</b> {len(abstracts[grade][subject])}\n<i>Также ты можешь выложить свой "
+                f"конспект</i>", call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=markup)
+        except telebot.apihelper.ApiTelegramException:
+            bot.answer_callback_query(call.id, "Ничего нового😥", show_alert=True, cache_time=5)
+    elif data.startswith("btn_book"):
+        _, _, grade, subject, book = data.split("_")
+        info = abstracts[grade][subject][book]
+        author_name = info["a"]
+        try:
+            author = bot.get_chat(int(author_name))
+            author_name = f'<a href="tg://user?id={info["a"]}">' \
+                          f'{author.first_name + n(author.last_name, " ")}</a></b> {n(author.username, "@")}'
+        except telebot.apihelper.ApiTelegramException | ValueError:
+            pass
+        docs = [telebot.types.InputMediaDocument(d) for d in info['id']['d']]
+        photos = [telebot.types.InputMediaPhoto(d) for d in info['id']['p']]
+        caption = f'{info["id"]["u"]}<b>{book}</b>\n<b>Автор: {author_name}\n<b>Опубликовано:</b> ' \
+                  f'{datetime.fromtimestamp(info["t"], ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M")}'
+        if len(docs) > 0:
+            docs[-1].caption = caption
+            docs[-1].parse_mode = 'HTML'
+        elif len(photos) > 0:
+            photos[-1].caption = caption
+            photos[-1].parse_mode = 'HTML'
+        else:
+            bot.send_message(call.message.chat.id, caption, 'HTML')
+        for i in range(0, len(photos), 10):
+            bot.send_media_group(call.message.chat.id, photos[i:i + 10])
+        for i in range(0, len(docs), 10):
+            bot.send_media_group(call.message.chat.id, docs[i:i + 10])
+        bot.answer_callback_query(call.id, "Конспект отправлен!")
+    elif data.startswith("btn_back"):
+        bot.edit_message_text(book_orig_text, call.message.chat.id, call.message.message_id, parse_mode='HTML',
+                              reply_markup=telebot.util.quick_markup({grade: {
+                                  'callback_data': f'btn_grade_{grade}'} for grade in abstracts}, 5))
+    elif data.startswith("btn_upload"):
+        fs = data.rfind("_")
+        subject = data[fs + 1:]
+        grade = data[data[:fs].rfind("_") + 1:fs]
+        bot.send_message(
+            call.message.chat.id,
+            f'<b>🎓 Класс:</b> {grade}\n<b>📗 {subject}</b>\n\n'
+            f'<b>Чтобы выложить свой конспект, напиши его <i>название</i></b> '
+            f'<i>(год будет подписан автоматически в его конце)</i>\n<i>/cancel - отмена</i>', 'HTML',
+            reply_markup=telebot.types.ForceReply(input_field_placeholder="Введи название конспекта"))
+        bot.answer_callback_query(call.id, "Следуй инструкциям!")
+        users[str(call.message.chat.id)]["wait_for_book_name"] = (grade, subject)
+        save()
+    elif data.startswith("btn_chat"):
+        start_chat(str(call.message.chat.id), data[data.rfind("_") + 1:])
         bot.answer_callback_query(call.id, "Чат начат!")
-    elif data.startswith("btn_photo_"):
-        chat_id = data.split("btn_photo_")[1]
+    elif data.startswith("btn_photo"):
+        chat_id = data[data.rfind("_") + 1:]
         try:
             chat_info = bot.get_chat(chat_id)
         except telebot.apihelper.ApiTelegramException:
@@ -359,7 +569,7 @@ def query(call: telebot.types.CallbackQuery):
             images[file_id] = bot.send_photo(call.message.chat.id, photo_id).photo[-1].file_id
         bot.answer_callback_query(call.id, "Фото отправлены!")
         save()
-    elif data.startswith("btn_pinned_"):
+    elif data.startswith("btn_pinned"):
         forward = data.split("_")
         try:
             bot.forward_message(call.message.chat.id, forward[2], int(forward[3]))
@@ -371,9 +581,9 @@ def query(call: telebot.types.CallbackQuery):
                 bot.answer_callback_query(call.id, "Сообщение не закреплено!")
                 return
         bot.answer_callback_query(call.id, "Закреп отправлен!")
-    elif data.startswith("btn_ignore_"):
-        ignore.append(data.split("btn_ignore_")[1])
-        bot.edit_message_reply_markup(call.message.chat.id, message_id=call.message.message_id)
+    elif data.startswith("btn_ignore"):
+        ignore.append(data[data.rfind("_") + 1:])
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
         save()
 
 
@@ -425,49 +635,13 @@ def parse_updates(json_string):
     bot.process_new_updates([telebot.types.Update.de_json(json_string)])
 
 
-def web_app(env, response):
-    fn = env['PATH_INFO']
-    method = env['REQUEST_METHOD']
-    if method == 'GET':
-        if fn == '/':
-            fn = '/index.html'
-        if os.path.exists('website' + fn):
-            mimetype = mimetypes.guess_type(fn)[0]
-            if mimetype is not None:
-                response('200 OK', [('Content-Type', mimetype)])
-                return util.FileWrapper(open('website' + fn, "rb"))
-        response('404 Not Found', [])
-        return []
-    elif method == 'POST':
-        if fn == '/' + TOKEN and env['CONTENT_TYPE'] == 'application/json':
-            parse_updates(env['wsgi.input'].read(int(env['CONTENT_LENGTH'])).decode("utf-8"))
-            response('200 OK', [])
-            return []
-        else:
-            response('403 Forbidden', [])
-            return []
-    else:
-        response('200 OK', [])
-        return []
-
-
-class ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
-    pass
-
-
 # Запуск бота
 bot.set_webhook(url=web_url + TOKEN)
 
 Thread(target=timer).start()
+webserver.parse_updates = parse_updates
 print("start")
+webserver.run_webserver(TOKEN)
 
-with make_server('', 80, web_app, ThreadingWSGIServer) as server:
-    print("Запуск сервера через порт 80...")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
-        bot.remove_webhook()
-        print("Сервер остановлен.")
+bot.remove_webhook()
+print("finish")
