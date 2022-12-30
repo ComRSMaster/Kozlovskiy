@@ -492,13 +492,13 @@ def query(call: telebot.types.CallbackQuery):
         try:
             author = bot.get_chat(int(author_name))
             author_name = f'<a href="tg://user?id={info["a"]}">' \
-                          f'{author.first_name + n(author.last_name, " ")}</a></b> {n(author.username, "@")}'
-        except telebot.apihelper.ApiTelegramException | ValueError:
+                          f'{author.first_name + n(author.last_name, " ")}</a> {n(author.username, "@")}'
+        except (telebot.apihelper.ApiTelegramException, ValueError):
             pass
         docs = [telebot.types.InputMediaDocument(d) for d in info['id']['d']]
         photos = [telebot.types.InputMediaPhoto(d) for d in info['id']['p']]
-        caption = f'{info["id"]["u"]}<b>{book}</b>\n<b>Автор: {author_name}\n<b>Опубликовано:</b> ' \
-                  f'{datetime.fromtimestamp(info["t"], ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M")}'
+        caption = f'{info["id"]["u"]}<b>{book}\nАвтор: {author_name}\nОпубликовано: ' \
+                  f'{datetime.fromtimestamp(info["t"], ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M")}</b>'
         if len(docs) > 0:
             docs[-1].caption = caption
             docs[-1].parse_mode = 'HTML'
