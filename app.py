@@ -35,16 +35,8 @@ def command_help(msg: telebot.types.Message):
             book_data = users[str(msg.chat.id)]["wait_for_done"]
             grade, subject, book = book_data['n']
             unix = book_data['d'] if 'd' in book_data else msg.date
-            book_orig = f'{book} ({datetime.fromtimestamp(unix, ZoneInfo("Europe/Moscow")).year})'
-            book = book_orig
-            i = 1
-            while book in abstracts[grade][subject]:
-                book = f'{book_orig} {i}'
-                i += 1
-            abstracts[grade][subject][book] = {}
-            abstracts[grade][subject][book]["id"] = book_data["id"]
-            abstracts[grade][subject][book]["a"] = book_data["z"]
-            abstracts[grade][subject][book]["t"] = unix
+            book = f'{book} ({datetime.fromtimestamp(unix, ZoneInfo("Europe/Moscow")).year})'
+            abstracts[grade][subject].append({"id": book_data["id"], "a": book_data["z"], "t": unix})
             bot.send_message(msg.chat.id,
                              f'<b>Ваш конспект "{book}" успешно выложен!\n🎓 {grade} класс, {subject}</b>', 'HTML',
                              reply_markup=telebot.types.ReplyKeyboardRemove())
@@ -477,7 +469,8 @@ def query(call: telebot.types.CallbackQuery):
             telebot.types.InlineKeyboardButton(
                 "Выложить 🔼", callback_data=f'btn_upload_{grade}_{subject}'), row_width=3).add(
             *[telebot.types.InlineKeyboardButton(
-                book, callback_data=f'btn_book_{grade}_{subject}_{book}') for book in abstracts[grade][subject]])
+                abstracts[grade][subject][b]["n"],
+                callback_data=f'btn_book_{grade}_{subject}_{b}') for b in range(len(abstracts[grade][subject]))])
         try:
             bot.edit_message_text(
                 f"<b>📕Конспекты и готовые билеты📙</b>\n\n<b>🎓 Класс:</b> {grade}\n<b>📗 {subject}</b>\n\n"
@@ -487,7 +480,7 @@ def query(call: telebot.types.CallbackQuery):
             bot.answer_callback_query(call.id, "Ничего нового😥", show_alert=True, cache_time=5)
     elif data.startswith("btn_book"):
         _, _, grade, subject, book = data.split("_")
-        info = abstracts[grade][subject][book]
+        info = abstracts[grade][subject][int(book)]
         author_name = info["a"]
         try:
             author = bot.get_chat(int(author_name))
@@ -497,7 +490,7 @@ def query(call: telebot.types.CallbackQuery):
             pass
         docs = [telebot.types.InputMediaDocument(d) for d in info['id']['d']]
         photos = [telebot.types.InputMediaPhoto(d) for d in info['id']['p']]
-        caption = f'{info["id"]["u"]}<b>{book}\nАвтор: {author_name}\nОпубликовано: ' \
+        caption = f'{info["id"]["u"]}<b>{info["n"]}\nАвтор: {author_name}\nОпубликовано: ' \
                   f'{datetime.fromtimestamp(info["t"], ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M")}</b>'
         if len(docs) > 0:
             docs[-1].caption = caption
