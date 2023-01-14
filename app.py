@@ -4,7 +4,6 @@ from threading import Thread
 import telebot.types
 
 import tools
-import webserver
 from tools import *
 
 
@@ -21,7 +20,7 @@ def command_help(msg: telebot.types.Message):
 
 
 @bot.message_handler(commands=['books'])
-def command_help(msg: telebot.types.Message):
+def command_books(msg: telebot.types.Message):
     bot.send_message(msg.chat.id, book_orig_text, 'HTML',
                      reply_markup=telebot.util.quick_markup(
                          {grade: {'callback_data': f'btn_grade_{grade}'} for grade in abstracts}, 5))
@@ -29,34 +28,32 @@ def command_help(msg: telebot.types.Message):
 
 
 @bot.message_handler(commands=['done'])
-def command_help(msg: telebot.types.Message):
-    if "wait_for_done" in users[str(msg.chat.id)]:
-        if 'z' in users[str(msg.chat.id)]["wait_for_done"]:
-            book_data = users[str(msg.chat.id)]["wait_for_done"]
-            grade, subject, book = book_data['n']
-            unix = book_data['d'] if 'd' in book_data else msg.date
-            book = f'{book} ({datetime.fromtimestamp(unix, ZoneInfo("Europe/Moscow")).year})'
-            abstracts[grade][subject].append({"id": book_data["id"], "a": book_data["z"], "t": unix})
-            bot.send_message(msg.chat.id,
-                             f'<b>Ваш конспект "{book}" успешно выложен!\n🎓 {grade} класс, {subject}</b>', 'HTML',
-                             reply_markup=telebot.types.ReplyKeyboardRemove())
-            users[str(msg.chat.id)].pop("wait_for_done")
-            users[str(msg.chat.id)].pop("getting_id")
-        else:
-            users[str(msg.chat.id)]["getting_id"] = 2
-            users[str(msg.chat.id)]["wait_for_done"]['n'] = users[str(msg.chat.id)].pop("wait_for_book")
-            users[str(msg.chat.id)]["wait_for_done"]['z'] = str(msg.chat.id)
-            markup = telebot.types.ReplyKeyboardMarkup(
-                input_field_placeholder="Чей конспект?", row_width=1, resize_keyboard=True).add(
-                telebot.types.KeyboardButton(
-                    f'{msg.from_user.id}; {msg.from_user.first_name + n(msg.from_user.last_name, " ")}  (вы)'),
-                *[telebot.types.KeyboardButton(f'{a}; {name}') for a, name in users[
-                    str(msg.chat.id)]["wait_for_done"]['a'].items()])
-            bot.send_message(
-                msg.chat.id,
-                "От имени кого ты хочешь выложить конспект?\nВыбери внизу, или поделись со мной "
-                "контактом этого человека, или перешли от него любое сообщение, или напиши его имя",
-                reply_markup=markup)
+def command_done(msg: telebot.types.Message):
+    if users[str(msg.chat.id)]['s'] == "wait_for_done":
+        users[str(msg.chat.id)]['s'] = "wait_for_pub"
+        users[str(msg.chat.id)]['sd']['z'] = str(msg.chat.id)
+        markup = telebot.types.ReplyKeyboardMarkup(
+            input_field_placeholder="Чей конспект?", row_width=1, resize_keyboard=True).add(
+            telebot.types.KeyboardButton(
+                f'{msg.from_user.id}; {msg.from_user.first_name + n(msg.from_user.last_name, " ")}  (вы)'),
+            *[telebot.types.KeyboardButton(f'{a}; {name}') for a, name in users[str(msg.chat.id)]['sd']['a'].items()])
+        bot.send_message(
+            msg.chat.id,
+            "От имени кого ты хочешь выложить конспект?\nВыбери внизу, или поделись со мной "
+            "контактом этого человека, или перешли от него любое сообщение, или напиши его имя",
+            reply_markup=markup)
+        save()
+    elif users[str(msg.chat.id)]['s'] == "wait_for_pub":
+        book_data = users[str(msg.chat.id)]['sd']
+        grade, subject, book = book_data['data']
+        unix = book_data['d'] if 'd' in book_data else msg.date
+        book = f'{book} ({datetime.fromtimestamp(unix, ZoneInfo("Europe/Moscow")).year})'
+        abstracts[grade][subject].append({'n': book, 'id': book_data['id'], 'a': book_data['z'], 't': unix})
+        bot.send_message(msg.chat.id,
+                         f'<b>Ваш конспект "{book}" успешно выложен!\n🎓 {grade} класс, {subject}</b>', 'HTML',
+                         reply_markup=telebot.types.ReplyKeyboardRemove())
+        users[str(msg.chat.id)]['s'] = ''
+        users[str(msg.chat.id)].pop('sd')
         save()
 
     chat_management(msg)
@@ -64,8 +61,8 @@ def command_help(msg: telebot.types.Message):
 
 @bot.message_handler(commands=['chat'])
 def command_chat(msg: telebot.types.Message):
-    args = msg.text.split()
-    if len(args) == 1:
+    chat_id = telebot.util.extract_arguments(msg.text)
+    if chat_id:
         bot.send_message(
             msg.chat.id, "Эта команда позволяет писать <b>анонимно</b> другим людям.\n\n"
                          "<i>Использование:</i> /chat <i>chat_id</i>\n"
@@ -73,13 +70,13 @@ def command_chat(msg: telebot.types.Message):
                          "<b>⬇ Нажмите кнопку ниже для выбора чата ⬇</b>", "HTML",
             reply_markup=telebot.util.quick_markup({'Выбрать чат 💬': {'switch_inline_query_current_chat': ''}}))
     else:
-        start_chat(str(msg.chat.id), args[1])
+        start_chat(str(msg.chat.id), chat_id)
     chat_management(msg)
 
 
 @bot.message_handler(commands=['id'])
 def command_id(msg: telebot.types.Message):
-    users[str(msg.chat.id)]["getting_id"] = 1
+    users[str(msg.chat.id)]['s'] = "getting_id"
     bot.send_message(msg.chat.id, "Теперь перешли мне любое сообщение из чата, "
                                   "или поделись со мной контактом этого человека.\n /cancel - отмена")
     save()
@@ -88,7 +85,7 @@ def command_id(msg: telebot.types.Message):
 
 @bot.message_handler(commands=['d'])
 def command_d(msg: telebot.types.Message):
-    file_id = get_voice_id(msg)
+    file_id = get_voice_id(msg, True)
     if file_id is None:
         bot.send_message(msg.chat.id,
                          "<b>Ответьте на голосовое/видео сообщение командой /d, чтобы его расшифровать.</b>"
@@ -108,6 +105,43 @@ def command_rnd(msg: telebot.types.Message):
         start_num, end_num = end_num, start_num
     bot.send_message(msg.chat.id,
                      f"🎲 Случайное число от {start_num} до {end_num}:  {random.randint(start_num, end_num)}")
+    chat_management(msg)
+
+
+@bot.message_handler(commands=['up'])
+def command_up(msg: telebot.types.Message):
+    file_id = None
+    if msg.reply_to_message is not None:
+        if msg.reply_to_message.content_type == "photo":
+            file_id = msg.reply_to_message.photo[-1].file_id
+        elif msg.reply_to_message.content_type == "document":
+            file_id = msg.reply_to_message.document.file_id
+    try:
+        scale = float(telebot.util.extract_arguments(msg.text))
+    except ValueError:
+        scale = 0
+    if file_id is None:
+        bot.send_message(msg.chat.id,
+                         "<b>✨Улучшение качества фото через нейросеть✨</b>\n\n"
+                         "Чтобы улучшить фото, отправь его прямо сейчас <i>(желательно без сжатия)\n"
+                         "Также можно ответить командой <code>/up N</code> на уже отправленное фото, "
+                         "где N - масштаб улучшения</i>", 'HTML',
+                         reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь фото"))
+        users[str(msg.chat.id)]['s'] = 'up_photo'
+        save()
+    elif scale:
+        gfpgan(msg.chat.id, file_id, scale)
+    else:
+        bot.send_message(msg.chat.id,
+                         "<b>✨Улучшение качества фото через нейросеть✨</b>\n\n"
+                         "Чтобы улучшить фото, отправь сейчас масштаб улучшения,"
+                         "например, 2 - увеличение качества в 2 раза\n"
+                         "<i>Также можно ответить командой <code>/up N</code> на уже отправленное фото, "
+                         "где N - масштаб улучшения</i>", 'HTML',
+                         reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь масштаб"))
+        users[str(msg.chat.id)]['s'] = 'up_scale'
+        users[str(msg.chat.id)]['sd'] = file_id
+        save()
     chat_management(msg)
 
 
@@ -161,11 +195,9 @@ def command_exec(msg: telebot.types.Message):
 
 @bot.message_handler(commands=['cancel'])
 def command_cancel(msg: telebot.types.Message):
-    a = users[str(msg.chat.id)].pop("getting_id", 0)
-    b = users[str(msg.chat.id)].pop("wait_for_book_name", 0)
-    c = users[str(msg.chat.id)].pop("wait_for_book", 0)
-    d = users[str(msg.chat.id)].pop("wait_for_done", 0)
-    if a or b or c or d:
+    if users[str(msg.chat.id)]['s']:
+        users[str(msg.chat.id)]['s'] = ''
+        users[str(msg.chat.id)].pop('sd', 0)
         bot.send_message(msg.chat.id, "<b>Всё отменяю!</b>", 'HTML', reply_markup=telebot.types.ReplyKeyboardRemove())
         save()
     else:
@@ -267,36 +299,28 @@ def chatting(msg: telebot.types.Message):
     # voter
     if msg.content_type == "poll":
         bot.send_message(msg.chat.id, random.choice(msg.poll.options).text, reply_to_message_id=msg.id)
-    if "wait_for_book_name" in users[str(msg.chat.id)]:
+    state = users[str(msg.chat.id)]['s']
+    if state == "wait_for_book_name":
         name = n(msg.text) + n(msg.caption)
         if name:
-            grade, subject = users[str(msg.chat.id)]["wait_for_book_name"]
-            users[str(msg.chat.id)]["wait_for_book"] = (grade, subject, name)
+            grade, subject = users[str(msg.chat.id)]['sd']
+            users[str(msg.chat.id)]['s'] = "wait_for_book"
+            users[str(msg.chat.id)]['sd'] = {'id': {'d': [], 'p': [], 'u': ''}, 'data': (grade, subject, name),
+                                             'a': {}, 'g': ''}
             bot.send_message(msg.chat.id, f"Конспект успешно назван: <b>{name}</b>", 'HTML')
             bot.send_message(msg.chat.id, f"<b>Теперь отправь файлы, фото, или ссылку с готовым конспектом</b>", 'HTML',
                              reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь конспект"))
-            users[str(msg.chat.id)].pop("wait_for_book_name")
             save()
         else:
             bot.send_message(msg.chat.id, "Попробуй назвать свой конспект ещё раз нормально")
         return
-    elif "wait_for_book" in users[str(msg.chat.id)]:
-        grade, subject, book = users[str(msg.chat.id)]["wait_for_book"]
-        if "wait_for_done" not in users[str(msg.chat.id)]:
-            users[str(msg.chat.id)]["wait_for_done"] = {}
-            users[str(msg.chat.id)]["wait_for_done"]['id'] = {}
-            users[str(msg.chat.id)]["wait_for_done"]['id']['d'] = []
-            users[str(msg.chat.id)]["wait_for_done"]['id']['p'] = []
-            users[str(msg.chat.id)]["wait_for_done"]['id']['u'] = ''
-            users[str(msg.chat.id)]["wait_for_done"]['data'] = (grade, subject, book)
-            users[str(msg.chat.id)]["wait_for_done"]['a'] = {}
-            users[str(msg.chat.id)]["wait_for_done"]['g'] = ''
+    elif state == "wait_for_book" or state == "wait_for_done":
         if msg.content_type == "photo":
-            users[str(msg.chat.id)]["wait_for_done"]['id']['p'].append(msg.photo[-1].file_id)
+            users[str(msg.chat.id)]['sd']['id']['p'].append(msg.photo[-1].file_id)
         elif msg.content_type == "document":
-            users[str(msg.chat.id)]["wait_for_done"]['id']['d'].append(msg.document.file_id)
+            users[str(msg.chat.id)]['sd']['id']['d'].append(msg.document.file_id)
         elif msg.content_type == "text" and msg.entities is not None and any(e.type == 'url' for e in msg.entities):
-            users[str(msg.chat.id)]["wait_for_done"]['id']['u'] += msg.text + '\n\n'
+            users[str(msg.chat.id)]['sd']['id']['u'] += msg.text + '\n\n'
         else:
             bot.send_message(msg.chat.id, "<b>В конспекты можно отправлять только файлы, "
                                           "ссылки, фото или фото без сжатия!</b>", 'HTML')
@@ -304,55 +328,56 @@ def chatting(msg: telebot.types.Message):
             return
         if msg.forward_from is not None:
             if msg.forward_from.id != msg.from_user.id:
-                users[str(msg.chat.id)]["wait_for_done"]['a'][
+                users[str(msg.chat.id)]['sd']['a'][
                     msg.forward_from.id] = msg.forward_from.first_name + n(msg.forward_from.last_name, " ")
-            users[str(msg.chat.id)]["wait_for_done"]['d'] = msg.forward_date
-        if msg.media_group_id != users[str(msg.chat.id)]["wait_for_done"]['g']:
+            users[str(msg.chat.id)]['sd']['d'] = msg.forward_date
+        if msg.media_group_id is None or msg.media_group_id != users[str(msg.chat.id)]['sd']['g']:
+            users[str(msg.chat.id)]['s'] = "wait_for_done"
             bot.send_message(msg.chat.id, "<b>Чтобы выложить конспект, используй команду /done</b>", 'HTML')
-        users[str(msg.chat.id)]["wait_for_done"]['g'] = msg.media_group_id
+        users[str(msg.chat.id)]['sd']['g'] = msg.media_group_id
         save()
         return
-    elif "getting_id" in users[str(msg.chat.id)]:
-        getting_id = users[str(msg.chat.id)]["getting_id"]
-        if getting_id == 1:
-            users[str(msg.chat.id)].pop("getting_id")
+    elif state == "getting_id" or state == "wait_for_pub":
+        is_pub = state == "wait_for_pub"
+        if is_pub:
+            markup = None
+        else:
+            users[str(msg.chat.id)]['s'] = ''
             save()
             markup = telebot.types.InlineKeyboardMarkup()
-        else:
-            markup = None
         if msg.content_type == 'contact':
             chat_id = msg.contact.user_id
             if not chat_id:
                 bot.send_message(msg.chat.id, "Этого человека нет в Telegram.")
             else:
-                if getting_id == 1:
+                if is_pub:
+                    author_name = f'<a href="tg://user?id={chat_id}">' \
+                                  f'{msg.contact.first_name + n(msg.contact.last_name, " ")}</a>'
+                    bot.send_message(
+                        msg.chat.id, f"Конспект будет выложен от: <b>{author_name}</b> ?\n/done - выложить", 'HTML')
+                    users[str(msg.chat.id)]['sd']['z'] = str(chat_id)
+                    save()
+                else:
                     markup.add(telebot.types.InlineKeyboardButton(text="Начать чат",
                                                                   callback_data=f"btn_chat_{chat_id}"))
                     bot.send_message(msg.chat.id, chat_id, reply_markup=markup)
-                else:
-                    author_name = f'<a href="tg://user?id={chat_id}">' \
-                                  f'{msg.contact.first_name + n(msg.contact.last_name, " ")}</a>'
-                    bot.send_message(msg.chat.id, f"Конспект будет выложен от: <b>{author_name}</b> ?\n"
-                                                  f"/done - выложить", 'HTML')
-                    users[str(msg.chat.id)]["wait_for_done"]['z'] = str(chat_id)
-                    save()
             return
         elif msg.forward_from is not None:
             chat_id = msg.forward_from.id
-            if getting_id == 1:
-                markup.add(telebot.types.InlineKeyboardButton(text="Начать чат",
-                                                              callback_data=f"btn_chat_{chat_id}"))
-                bot.send_message(msg.chat.id, chat_id, reply_markup=markup)
-            else:
+            if is_pub:
                 author_name = f'<a href="tg://user?id={chat_id}">' \
                               f'{msg.forward_from.first_name + n(msg.forward_from.last_name, " ")}</a>' \
                               f' {n(msg.forward_from.username, "@")}'
                 bot.send_message(msg.chat.id, f"Конспект будет выложен от: <b>{author_name}</b>\n"
                                               f"/done - выложить", 'HTML')
-                users[str(msg.chat.id)]["wait_for_done"]['z'] = str(chat_id)
+                users[str(msg.chat.id)]['sd']['z'] = str(chat_id)
                 save()
+            else:
+                markup.add(telebot.types.InlineKeyboardButton(text="Начать чат",
+                                                              callback_data=f"btn_chat_{chat_id}"))
+                bot.send_message(msg.chat.id, chat_id, reply_markup=markup)
             return
-        elif getting_id == 2:
+        elif is_pub:
             if msg.content_type == 'text':
                 name = msg.text
                 chat_id = name
@@ -362,11 +387,39 @@ def chatting(msg: telebot.types.Message):
                     name = name[ids + 2:]
                 bot.send_message(msg.chat.id, f"Конспект будет выложен от: <b>{name}</b> ?\n"
                                               f"/done - выложить", 'HTML')
-                users[str(msg.chat.id)]["wait_for_done"]["z"] = chat_id
+                users[str(msg.chat.id)]['sd']["z"] = chat_id
                 save()
             else:
                 bot.send_message(msg.chat.id, "Попробуй ещё раз")
             return
+    elif state == "up_scale":
+        try:
+            scale = float(msg.text)
+            gfpgan(msg.chat.id, users[str(msg.chat.id)]['sd'], scale)
+            users[str(msg.chat.id)]['s'] = ''
+            users[str(msg.chat.id)].pop('sd', 0)
+            save()
+        except ValueError:
+            bot.send_message(msg.chat.id, "Масштаб должен быть числом, отправь масштаб ещё раз",
+                             reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь масштаб"))
+        return
+    elif state == "up_photo":
+        if msg.content_type == "photo":
+            file_id = msg.photo[-1].file_id
+        elif msg.content_type == "document":
+            file_id = msg.document.file_id
+        else:
+            bot.send_message(msg.chat.id,
+                             "Можно улучшить только обычные фото или фото без сжатия, отправь фото ещё раз",
+                             reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь фото"))
+            return
+        bot.send_message(msg.chat.id,
+                         "Теперь отправь масштаб улучшения, например, 2 - увеличение качества в 2 раза",
+                         reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь масштаб"))
+        users[str(msg.chat.id)]['s'] = 'up_scale'
+        users[str(msg.chat.id)]['sd'] = file_id
+        save()
+        return
     try:
         my_index = chat_id_my.index(str(msg.chat.id))  # мы
         reply = None
@@ -382,6 +435,7 @@ def chatting(msg: telebot.types.Message):
     except telebot.apihelper.ApiTelegramException as err:
         bot.send_message(msg.chat.id, "<b>Этому человеку невозможно написать через Козловского.</b>"
                                       "<i>(" + str(err.description) + ")</i>", 'HTML')
+        return
     except ValueError:
         pass
     # image search
@@ -441,14 +495,15 @@ def query(call: telebot.types.CallbackQuery):
     data = str(call.data)
     if data.startswith("btn_complex"):
         comp = data[-1:]
-        users[str(call.message.chat.id)]['complex'] = comp
-        bot.answer_callback_query(call.id, "Выбрана сложность: " + ("ХАРДКОР" if comp == 'h' else "ЛЕГКО"))
-        bot.edit_message_text(
-            f"<b>Запущена игра в города.</b>\n<i>Начинай первым!</i>\n\n"
-            f"Сложность: <b>{'ХАРДКОР' if comp == 'h' else 'ЛЕГКО'}</b>\n⬇<i>Выбери сложность⬇</i>",
-            call.message.chat.id, users[str(call.message.chat.id)]['complex_msg'], parse_mode="HTML",
-            reply_markup=telebot.util.quick_markup({"ЛЕГКО👌": {'callback_data': 'btn_complex_e'},
-                                                    "🔥ХАРДКОР🔥": {'callback_data': 'btn_complex_h'}}))
+        bot.answer_callback_query(call.id, f"Выбрана сложность: {'ХАРДКОР' if comp == 'h' else 'ЛЕГКО'}")
+        if users[str(call.message.chat.id)]['complex'] != comp:
+            bot.edit_message_text(
+                f"<b>Запущена игра в города.</b>\n<i>Начинай первым!</i>\n\n"
+                f"Сложность: <b>{'ХАРДКОР' if comp == 'h' else 'ЛЕГКО'}</b>\n⬇<i>Выбери сложность⬇</i>",
+                call.message.chat.id, users[str(call.message.chat.id)]['complex_msg'], parse_mode="HTML",
+                reply_markup=telebot.util.quick_markup({"ЛЕГКО👌": {'callback_data': 'btn_complex_e'},
+                                                        "🔥ХАРДКОР🔥": {'callback_data': 'btn_complex_h'}}))
+            users[str(call.message.chat.id)]['complex'] = comp
     elif data.startswith("btn_grade") or data.startswith("btn_subj_back"):
         grade = data[data.rfind("_") + 1:]
         subjects = {"◀ Назад": {'callback_data': 'btn_back'}}
@@ -520,7 +575,8 @@ def query(call: telebot.types.CallbackQuery):
             f'<i>(год будет подписан автоматически в его конце)</i>\n<i>/cancel - отмена</i>', 'HTML',
             reply_markup=telebot.types.ForceReply(input_field_placeholder="Введи название конспекта"))
         bot.answer_callback_query(call.id, "Следуй инструкциям!")
-        users[str(call.message.chat.id)]["wait_for_book_name"] = (grade, subject)
+        users[str(call.message.chat.id)]['s'] = "wait_for_book_name"
+        users[str(call.message.chat.id)]['sd'] = (grade, subject)
         save()
     elif data.startswith("btn_chat"):
         start_chat(str(call.message.chat.id), data[data.rfind("_") + 1:])
@@ -535,28 +591,23 @@ def query(call: telebot.types.CallbackQuery):
         if chat_info.photo is None:
             bot.answer_callback_query(call.id, "Фото профиля не найдены!")
             return
-        bot.send_chat_action(call.message.chat.id, action="upload_photo")
         if chat_info.type == "private":
             profile_photos: list = bot.get_user_profile_photos(int(chat_id)).photos
-            i = 0
             media_group = []
-            update_action = True
-            for p in profile_photos:
-                media_group.append(telebot.types.InputMediaPhoto(
-                    images[p[-1].file_id] if p[-1].file_id in images else
-                    bot.download_file(bot.get_file(p[-1].file_id).file_path)))
-                i += 1
-                if i == len(profile_photos):
-                    i = 10
-                    update_action = False
-                if i % 10 == 0:
-                    sent_photos = bot.send_media_group(call.message.chat.id, media_group)
-                    if update_action:
-                        bot.send_chat_action(call.message.chat.id, action="upload_photo")
-                    media_group.clear()
-                    for c in range(len(sent_photos)):
-                        images[profile_photos[i - 10 + c][-1].file_id] = sent_photos[c].photo[-1].file_id
+            k = 0
+            for c in telebot.util.chunks(profile_photos, 10):
+                bot.send_chat_action(call.message.chat.id, action="upload_photo")
+                for p in c:
+                    k += 1
+                    media_group.append(telebot.types.InputMediaPhoto(
+                        images[p[-1].file_id] if p[-1].file_id in images else
+                        bot.download_file(bot.get_file(p[-1].file_id).file_path)))
+                sent_photos = bot.send_media_group(call.message.chat.id, media_group)
+                for i in range(len(sent_photos)):
+                    images[profile_photos[k - len(c) + i][-1].file_id] = sent_photos[i].photo[-1].file_id
+                media_group.clear()
         else:
+            bot.send_chat_action(call.message.chat.id, action="upload_photo")
             file_id = chat_info.photo.big_file_id
             photo_id = images[file_id] if file_id in images else bot.download_file(bot.get_file(file_id).file_path)
             images[file_id] = bot.send_photo(call.message.chat.id, photo_id).photo[-1].file_id
@@ -629,12 +680,17 @@ def parse_updates(json_string):
 
 
 # Запуск бота
-bot.set_webhook(url=web_url + TOKEN)
-
 Thread(target=timer).start()
-webserver.parse_updates = parse_updates
 print("start")
-webserver.run_webserver(TOKEN)
+if is_dev:
+    bot.infinity_polling(skip_pending=True)
+else:
+    import webserver
 
-bot.remove_webhook()
+    bot.set_webhook(url=web_url + TOKEN)
+    webserver.parse_updates = parse_updates
+    webserver.run_webserver(TOKEN)
+
+    bot.remove_webhook()
+
 print("finish")

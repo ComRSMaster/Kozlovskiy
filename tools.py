@@ -1,6 +1,4 @@
 #!/usr/bin/python3
-import logging
-import time
 import configparser
 import json
 import os
@@ -8,6 +6,7 @@ import random
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime
 from io import StringIO
 
@@ -22,23 +21,25 @@ import telebot
 from bs4 import BeautifulSoup
 
 content_types = ["text", "audio", "document", "photo", "sticker", "video", "video_note", "voice",
-                 "location", "contact", "poll", "chat_member"]
+                 "location", "contact", "poll", "chat_member", "game"]
+is_dev = bool(os.getenv('dev', False))
 config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
 MIN_BIRTHDAY_HOUR = config.getint("Settings", "MIN_BIRTHDAY_HOUR")
 admin_chat = json.loads(config["Settings"]['admin_chat'])
-success_vid = json.loads(config["Settings"]['success_vid'])
+success_vid = json.loads(config["Settings"]['success_vid_DEV' if is_dev else 'success_vid'])
 calls = json.loads(config["Settings"]['calls'])
 calls_private = json.loads(config["Settings"]['calls_private'])
 ends = json.loads(config["Settings"]['ends'])
 searches = json.loads(config["Settings"]['searches'])
 
-with open('db.json', encoding="utf-8") as bd_file:
-    bd = json.load(bd_file)
-
+replicate_key = os.getenv("replicate_key")
 tts_key = os.getenv("tts_key")
 web_url = os.getenv("web_url")
 fb_url = os.getenv("fb_url")
+
+with open('db.json', encoding="utf-8") as bd_file:
+    bd = json.load(bd_file)
 
 ignore: list = bd['ignore']
 images: dict = bd['images']
@@ -64,6 +65,7 @@ help_text = \
     "/rnd - Случайное число <i>(по умолчанию от 1 до 6)</i>:\n<code>/rnd a</code> - случайное число от 1 до a\n" \
     "<code>/rnd a b</code> - случайное число от a до b\n<i>Например:</i> <code>/rnd 5 10</code> - случайное число " \
     "от 5 до 10\n" \
+    "/up - Улучшить качество фото через нейросеть\n" \
     "/books - Открыть базу конспектов и готовых билетов\n" \
     "/cancel - Отмена выполнения текущей команды\n" \
     "<b>Также бот умеет:</b>\n• Поздравлять с днём рождения\n• Выбирать случайный ответ в голосованиях\n" \
@@ -91,8 +93,9 @@ def save():
     to_save = json.dumps(bd, ensure_ascii=False)
     with open('db.json', 'w', encoding='utf-8') as db_file1:
         db_file1.write(to_save)
-    requests.put(f'{fb_url}.json', data=to_save.encode("utf-8"),
-                 headers={"content-type": "application/json; charset=UTF-8"})
+    if not is_dev:
+        requests.put(f'{fb_url}.json', data=to_save.encode("utf-8"),
+                     headers={"content-type": "application/json; charset=UTF-8"})
 
 
 with open('cities_easy.json', encoding="utf-8") as f:
@@ -101,19 +104,24 @@ with open('cities_easy.json', encoding="utf-8") as f:
 with open('cities_hard.json', encoding="utf-8") as f:
     cities_hard = json.loads(f.read())
 
-log_stream = StringIO()
-logging.basicConfig(stream=log_stream, level=logging.WARNING)
 
+class ExcHandler(telebot.ExceptionHandler):
+    def __init__(self):
+        import logging
+        self.log_stream = StringIO()
+        logging.basicConfig(stream=self.log_stream, level=logging.WARNING)
 
-class ExceptionHandler(telebot.ExceptionHandler):
     def handle(self, exception):
         telebot.logger.error(exception, exc_info=True)
-        bot.send_message(admin_chat, "ОШИБКА:\n" + log_stream.getvalue())
-        log_stream.truncate(0)
+        bot.send_message(admin_chat, f"ОШИБКА:\n{self.log_stream.getvalue()}"[:4096])
+        self.log_stream.seek(0)
+        self.log_stream.truncate(0)
 
 
 TOKEN = os.getenv("Kozlovskiy_token")
-bot = telebot.TeleBot(TOKEN, exception_handler=ExceptionHandler())
+bot = telebot.TeleBot(TOKEN, exception_handler=None if is_dev else ExcHandler(), allow_sending_without_reply=True)
+bot.enable_save_next_step_handlers(delay=2)
+bot.load_next_step_handlers()
 
 
 def start_chat(chat_id, chat):
@@ -176,7 +184,7 @@ def ai_talk(msg_text, chat_id: str, is_private=True, args=None, start='', append
         users[chat_id]["talk"] += [msg_text, start]
         save()
         return
-    voice_id = None if start else get_voice_id(msg_voice)
+    voice_id = None if start else get_voice_id(msg_voice, False)
     is_voice = voice_id is not None
     if is_voice:
         bot.send_chat_action(chat_id, action="record_voice")
@@ -200,15 +208,42 @@ def ai_talk(msg_text, chat_id: str, is_private=True, args=None, start='', append
 def photo_search(chat_id, msg_id, search_photo):
     bot.send_chat_action(chat_id, action="typing")
     url_pic = f"https://yandex.ru/images/search?rpt=imageview&url={bot.get_file_url(search_photo.file_id)}"
-    soup = BeautifulSoup(requests.get(url_pic).text, 'lxml')
-    results_vk = soup.find('div', class_='CbirSites-ItemInfo')
-    if 'vk.com/id' in results_vk.find('a').get('href'):
-        bot.send_message(chat_id, results_vk.find('div', class_='CbirSites-ItemDescription').get_text(),
-                         reply_to_message_id=msg_id)
-        return
-    results = soup.find('section', 'CbirTags').find_all('a')
+    results = BeautifulSoup(requests.get(url_pic).text, 'lxml').find('section', 'CbirTags').find_all('a')
     bot.send_message(chat_id, '\n'.join('• ' + res.find('span').get_text().capitalize() for res in results),
                      reply_to_message_id=msg_id)
+
+
+def gfpgan(chat_id, file_id, scale):
+    bot.send_chat_action(chat_id, "upload_document")
+    post = requests.post(
+        "https://api.replicate.com/v1/predictions",
+        json={"version": "9283608cc6b7be6b65a8e44983db012355fde4132009bf99d976b2f0896856a3",
+              "input": {"img": bot.get_file_url(file_id), "scale": scale}},
+        headers={"Authorization": f"Token {replicate_key}", "Content-Type": "application/json"})
+    rec_json = post.json()
+    print(post)
+    print(rec_json)
+
+    while rec_json['status'] not in ["succeeded", "failed", "canceled"]:
+        time.sleep(0.5)
+        get = requests.get(
+            rec_json['urls']['get'],
+            headers={"Authorization": f"Token {replicate_key}", "Content-Type": "application/json"})
+        rec_json = get.json()
+        print(get)
+        print(rec_json)
+    if rec_json['status'] == "succeeded":
+        try:
+            bot.send_document(chat_id, rec_json['output'])
+        except telebot.apihelper.ApiTelegramException:
+            bot.send_message(chat_id, rec_json['output'])
+    elif rec_json['status'] == "canceled":
+        bot.send_message(chat_id, "<b>🛑 Команда отменена</b>", 'HTML')
+    else:
+        if rec_json['error'].startswith("local variable"):
+            bot.send_message(chat_id, "<b>❌ Тип файла не поддерживается...</b>", 'HTML')
+        else:
+            bot.send_message(chat_id, "<b>❌ Неизвестная ошибка...</b>", 'HTML')
 
 
 def todict(obj):
@@ -245,7 +280,6 @@ def parse_chat(chat: telebot.types.Chat):
             for m in bot.get_chat_administrators(chat.id):
                 text += '\n\n<b><a href="tg://user?id=' + str(m.user.id) + '">' + m.user.first_name + \
                         '</a></b> <pre>' + str(m.user.id) + '</pre> ' + n(m.user.username, '\n@')
-
         except telebot.apihelper.ApiTelegramException:
             pass
     return text
@@ -313,25 +347,22 @@ def new_private_cr(chat: telebot.types.Chat):
     save()
 
 
-def get_voice_id(msg: telebot.types.Message):
+def get_voice_id(msg: telebot.types.Message, reply: bool):
+    if reply:
+        if msg.reply_to_message is None:
+            return None
+        msg1 = msg.reply_to_message
+    else:
+        msg1 = msg
     file_id = None
-    if msg.content_type == "voice":
-        file_id = msg.voice.file_id
-    elif msg.content_type == "audio":
-        file_id = msg.audio.file_id
-    elif msg.content_type == "video_note":
-        file_id = msg.video_note.file_id
-    elif msg.content_type == "video":
-        file_id = msg.video.file_id
-    elif msg.reply_to_message is not None:
-        if msg.reply_to_message.content_type == "voice":
-            file_id = msg.reply_to_message.voice.file_id
-        elif msg.reply_to_message.content_type == "audio":
-            file_id = msg.reply_to_message.audio.file_id
-        elif msg.reply_to_message.content_type == "video_note":
-            file_id = msg.reply_to_message.video_note.file_id
-        elif msg.reply_to_message.content_type == "video":
-            file_id = msg.reply_to_message.video.file_id
+    if msg1.content_type == "voice":
+        file_id = msg1.voice.file_id
+    elif msg1.content_type == "audio":
+        file_id = msg1.audio.file_id
+    elif msg1.content_type == "video_note":
+        file_id = msg1.video_note.file_id
+    elif msg1.content_type == "video":
+        file_id = msg1.video.file_id
     return file_id
 
 
