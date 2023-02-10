@@ -119,29 +119,17 @@ def command_up(msg: telebot.types.Message):
     try:
         scale = float(telebot.util.extract_arguments(msg.text))
     except ValueError:
-        scale = 0
+        scale = 2
     if file_id is None:
         bot.send_message(msg.chat.id,
                          "<b>✨Улучшение качества фото через нейросеть✨</b>\n\n"
-                         "Чтобы улучшить фото, отправь его прямо сейчас <i>(желательно без сжатия)\n"
+                         "Чтобы улучшить фото, отправь его прямо сейчас <i>(желательно без сжатия)\n</i>"
                          "Также можно ответить командой <code>/up N</code> на уже отправленное фото, "
-                         "где N - масштаб улучшения</i>", 'HTML',
+                         "где N - масштаб улучшения, <i>(по умолчанию 2)</i>", 'HTML',
                          reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь фото"))
         users[str(msg.chat.id)]['s'] = 'up_photo'
         save()
-    elif scale:
-        gfpgan(msg.chat.id, file_id, scale)
-    else:
-        bot.send_message(msg.chat.id,
-                         "<b>✨Улучшение качества фото через нейросеть✨</b>\n\n"
-                         "Чтобы улучшить фото, отправь сейчас масштаб улучшения,"
-                         "например, 2 - увеличение качества в 2 раза\n"
-                         "<i>Также можно ответить командой <code>/up N</code> на уже отправленное фото, "
-                         "где N - масштаб улучшения</i>", 'HTML',
-                         reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь масштаб"))
-        users[str(msg.chat.id)]['s'] = 'up_scale'
-        users[str(msg.chat.id)]['sd'] = file_id
-        save()
+    gfpgan(msg.chat.id, file_id, scale)
     chat_management(msg)
 
 
@@ -392,17 +380,6 @@ def chatting(msg: telebot.types.Message):
             else:
                 bot.send_message(msg.chat.id, "Попробуй ещё раз")
             return
-    elif state == "up_scale":
-        try:
-            scale = float(msg.text)
-            gfpgan(msg.chat.id, users[str(msg.chat.id)]['sd'], scale)
-            users[str(msg.chat.id)]['s'] = ''
-            users[str(msg.chat.id)].pop('sd', 0)
-            save()
-        except ValueError:
-            bot.send_message(msg.chat.id, "Масштаб должен быть числом, отправь масштаб ещё раз",
-                             reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь масштаб"))
-        return
     elif state == "up_photo":
         if msg.content_type == "photo":
             file_id = msg.photo[-1].file_id
@@ -413,11 +390,7 @@ def chatting(msg: telebot.types.Message):
                              "Можно улучшить только обычные фото или фото без сжатия, отправь фото ещё раз",
                              reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь фото"))
             return
-        bot.send_message(msg.chat.id,
-                         "Теперь отправь масштаб улучшения, например, 2 - увеличение качества в 2 раза",
-                         reply_markup=telebot.types.ForceReply(input_field_placeholder="Отправь масштаб"))
-        users[str(msg.chat.id)]['s'] = 'up_scale'
-        users[str(msg.chat.id)]['sd'] = file_id
+        gfpgan(msg.chat.id, file_id, users[str(msg.chat.id)]['s'])
         save()
         return
     try:
@@ -439,7 +412,7 @@ def chatting(msg: telebot.types.Message):
     except ValueError:
         pass
     # image search
-    if any(s in current for s in searches):
+    if len(args) < 7 and any(s in current for s in searches):
         if msg.content_type == 'photo':
             photo_search(msg.chat.id, msg.id, msg.photo[-1])
             return

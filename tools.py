@@ -65,7 +65,7 @@ help_text = \
     "/rnd - Случайное число <i>(по умолчанию от 1 до 6)</i>:\n<code>/rnd a</code> - случайное число от 1 до a\n" \
     "<code>/rnd a b</code> - случайное число от a до b\n<i>Например:</i> <code>/rnd 5 10</code> - случайное число " \
     "от 5 до 10\n" \
-    "/up - Улучшить качество фото через нейросеть\n" \
+    "/up N - Улучшить качество фото через нейросеть, где N - масштаб улучшения, <i>(по умолчанию 2)</i>\n" \
     "/books - Открыть базу конспектов и готовых билетов\n" \
     "/cancel - Отмена выполнения текущей команды\n" \
     "<b>Также бот умеет:</b>\n• Поздравлять с днём рождения\n• Выбирать случайный ответ в голосованиях\n" \
@@ -328,7 +328,7 @@ def new_group_cr(chat: telebot.types.Chat):
     chat_id = str(chat.id)
     if users.get(chat_id) is not None:
         return
-    users[chat_id] = {}
+    users[chat_id] = {'s': ''}
     markup = telebot.types.InlineKeyboardMarkup()
     markup.add(telebot.types.InlineKeyboardButton(text="Ignore", callback_data="btn_ignore_" + chat_id))
     bot.send_message(admin_chat, "<b>Новая группа: " + chat.title + "  <pre>" +
@@ -339,7 +339,7 @@ def new_group_cr(chat: telebot.types.Chat):
 
 def new_private_cr(chat: telebot.types.Chat):
     chat_id = str(chat.id)
-    users[chat_id] = {}
+    users[chat_id] = {'s': ''}
     bot.send_message(chat_id, help_text, 'HTML')
     bot.send_video(chat_id, success_vid, caption="<b>Чем я могу помочь?</b>🤔", parse_mode="HTML")
     ai_talk("/start", str(chat.id), start="Чем я могу помочь?🤔")

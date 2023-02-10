@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru" class="h-100">
+<html lang="ru">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,39 +8,331 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="manifest" href="/site.webmanifest">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet"
-          integrity="sha384-Zenh87qX5JnK2Jl0vWa8Ck2rdkQ2Bzep5IDxbcnCeuOxjzrPF/et3URy9Bv1WTRi" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-GLhlTQ8iRABdZLl6O3oVMWSktQOp6b7In1Zl3/Jr59b6EGGoI1aFkw7cmDA6j6gD" crossorigin="anonymous">
+    <style>
+        .bi {
+            vertical-align: -0.125em;
+            fill: currentColor;
+        }
+        .icon-square {
+            width: 3rem;
+            height: 3rem;
+            border-radius: .75rem;
+        }
+    </style>
 </head>
-<body class="text-center row m-0 h-100">
-<main class="m-auto" style="max-width: 32rem;">
-    <div class="card border-light shadow-lg my-2">
-        <img src="kozlovskiy.jpg"
-             class="card-img-top mx-auto rounded-circle mt-4" alt="Фото профиля бота"
-             style="max-width: 128px; max-height: 128px;">
-        <div class="card-body">
-            <h5 class="card-title display-6 fw-bold pb-3">Козловский работает</h5>
-            <a href="https://t.me/Kkoslovsskiy27_bot" class="btn btn-primary btn-lg px-4 fw-bold">Открыть бота</a>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+    <symbol id="question" viewBox="0 0 16 16">
+        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+        <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/>
+    </symbol>
+    <symbol id="github" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+    </symbol>
+    <symbol id="telegram" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM8.287 5.906c-.778.324-2.334.994-4.666 2.01-.378.15-.577.298-.595.442-.03.243.275.339.69.47l.175.055c.408.133.958.288 1.243.294.26.006.549-.1.868-.32 2.179-1.471 3.304-2.214 3.374-2.23.05-.012.12-.026.166.016.047.041.042.12.037.141-.03.129-1.227 1.241-1.846 1.817-.193.18-.33.307-.358.336a8.154 8.154 0 0 1-.188.186c-.38.366-.664.64.015 1.088.327.216.589.393.85.571.284.194.568.387.936.629.093.06.183.125.27.187.331.236.63.448.997.414.214-.02.435-.22.547-.82.265-1.417.786-4.486.906-5.751a1.426 1.426 0 0 0-.013-.315.337.337 0 0 0-.114-.217.526.526 0 0 0-.31-.093c-.3.005-.763.166-2.984 1.09z"/>
+    </symbol>
+    <symbol id="cpu" viewBox="0 0 16 16">
+        <path d="M5 0a.5.5 0 0 1 .5.5V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2A2.5 2.5 0 0 1 14 4.5h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14a2.5 2.5 0 0 1-2.5 2.5v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14A2.5 2.5 0 0 1 2 11.5H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2A2.5 2.5 0 0 1 4.5 2V.5A.5.5 0 0 1 5 0zm-.5 3A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13h7a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 11.5 3h-7zM5 6.5A1.5 1.5 0 0 1 6.5 5h3A1.5 1.5 0 0 1 11 6.5v3A1.5 1.5 0 0 1 9.5 11h-3A1.5 1.5 0 0 1 5 9.5v-3zM6.5 6a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-3z"/>
+    </symbol>
+    <symbol id="mic" viewBox="0 0 16 16">
+        <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/>
+        <path d="M10 8a2 2 0 1 1-4 0V3a2 2 0 1 1 4 0v5zM8 0a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V3a3 3 0 0 0-3-3z"/>
+    </symbol>
+    <symbol id="chat" viewBox="0 0 16 16">
+        <path d="M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4.414A2 2 0 0 0 3 11.586l-2 2V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12.793a.5.5 0 0 0 .854.353l2.853-2.853A1 1 0 0 1 4.414 12H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/>
+        <path d="M3 3.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zM3 6a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9A.5.5 0 0 1 3 6zm0 2.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5z"/>
+    </symbol>
+    <symbol id="poll" viewBox="0 0 16 16">
+        <path d="M8.05 9.6c.336 0 .504-.24.554-.627.04-.534.198-.815.847-1.26.673-.475 1.049-1.09 1.049-1.986 0-1.325-.92-2.227-2.262-2.227-1.02 0-1.792.492-2.1 1.29A1.71 1.71 0 0 0 6 5.48c0 .393.203.64.545.64.272 0 .455-.147.564-.51.158-.592.525-.915 1.074-.915.61 0 1.03.446 1.03 1.084 0 .563-.208.885-.822 1.325-.619.433-.926.914-.926 1.64v.111c0 .428.208.745.585.745z"/>
+        <path d="m10.273 2.513-.921-.944.715-.698.622.637.89-.011a2.89 2.89 0 0 1 2.924 2.924l-.01.89.636.622a2.89 2.89 0 0 1 0 4.134l-.637.622.011.89a2.89 2.89 0 0 1-2.924 2.924l-.89-.01-.622.636a2.89 2.89 0 0 1-4.134 0l-.622-.637-.89.011a2.89 2.89 0 0 1-2.924-2.924l.01-.89-.636-.622a2.89 2.89 0 0 1 0-4.134l.637-.622-.011-.89a2.89 2.89 0 0 1 2.924-2.924l.89.01.622-.636a2.89 2.89 0 0 1 4.134 0l-.715.698a1.89 1.89 0 0 0-2.704 0l-.92.944-1.32-.016a1.89 1.89 0 0 0-1.911 1.912l.016 1.318-.944.921a1.89 1.89 0 0 0 0 2.704l.944.92-.016 1.32a1.89 1.89 0 0 0 1.912 1.911l1.318-.016.921.944a1.89 1.89 0 0 0 2.704 0l.92-.944 1.32.016a1.89 1.89 0 0 0 1.911-1.912l-.016-1.318.944-.921a1.89 1.89 0 0 0 0-2.704l-.944-.92.016-1.32a1.89 1.89 0 0 0-1.912-1.911l-1.318.016z"/>
+        <path d="M7.001 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0z"/>
+    </symbol>
+    <symbol id="dice" viewBox="0 0 16 16">
+        <path d="M13 1a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10zM3 0a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V3a3 3 0 0 0-3-3H3z"/>
+        <path d="M5.5 4a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm8 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm-8 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm4-4a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
+    </symbol>
+    <symbol id="photo" viewBox="0 0 16 16">
+        <path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
+        <path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/>
+    </symbol>
+    <symbol id="hd" viewBox="0 0 16 16">
+        <path d="M7.396 11V5.001H6.209v2.44H3.687V5H2.5v6h1.187V8.43h2.522V11h1.187zM8.5 5.001V11h2.188c1.811 0 2.685-1.107 2.685-3.015 0-1.894-.86-2.984-2.684-2.984H8.5zm1.187.967h.843c1.112 0 1.622.686 1.622 2.04 0 1.353-.505 2.02-1.622 2.02h-.843v-4.06z"/>
+        <path d="M14 3a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h12zM2 2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H2z"/>
+    </symbol>
+    <symbol id="book" viewBox="0 0 16 16">
+        <path fill-rule="evenodd"
+              d="M6 8V1h1v6.117L8.743 6.07a.5.5 0 0 1 .514 0L11 7.117V1h1v7a.5.5 0 0 1-.757.429L9 7.083 6.757 8.43A.5.5 0 0 1 6 8z"/>
+        <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
+        <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
+    </symbol>
+    <symbol id="balloon" viewBox="0 0 16 16">
+        <path fill-rule="evenodd"
+              d="m8 2.42-.717-.737c-1.13-1.161-3.243-.777-4.01.72-.35.685-.451 1.707.236 3.062C4.16 6.753 5.52 8.32 8 10.042c2.479-1.723 3.839-3.29 4.491-4.577.687-1.355.587-2.377.236-3.061-.767-1.498-2.88-1.882-4.01-.721L8 2.42Zm-.49 8.5c-10.78-7.44-3-13.155.359-10.063.045.041.089.084.132.129.043-.045.087-.088.132-.129 3.36-3.092 11.137 2.624.357 10.063l.235.468a.25.25 0 1 1-.448.224l-.008-.017c.008.11.02.202.037.29.054.27.161.488.419 1.003.288.578.235 1.15.076 1.629-.157.469-.422.867-.588 1.115l-.004.007a.25.25 0 1 1-.416-.278c.168-.252.4-.6.533-1.003.133-.396.163-.824-.049-1.246l-.013-.028c-.24-.48-.38-.758-.448-1.102a3.177 3.177 0 0 1-.052-.45l-.04.08a.25.25 0 1 1-.447-.224l.235-.468ZM6.013 2.06c-.649-.18-1.483.083-1.85.798-.131.258-.245.689-.08 1.335.063.244.414.198.487-.043.21-.697.627-1.447 1.359-1.692.217-.073.304-.337.084-.398Z"/>
+    </symbol>
+    <symbol id="gamepad" viewBox="0 0 16 16">
+        <path d="M11.5 6.027a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0zm-1.5 1.5a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1zm2.5-.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0zm-1.5 1.5a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1zm-6.5-3h1v1h1v1h-1v1h-1v-1h-1v-1h1v-1z"/>
+        <path d="M3.051 3.26a.5.5 0 0 1 .354-.613l1.932-.518a.5.5 0 0 1 .62.39c.655-.079 1.35-.117 2.043-.117.72 0 1.443.041 2.12.126a.5.5 0 0 1 .622-.399l1.932.518a.5.5 0 0 1 .306.729c.14.09.266.19.373.297.408.408.78 1.05 1.095 1.772.32.733.599 1.591.805 2.466.206.875.34 1.78.364 2.606.024.816-.059 1.602-.328 2.21a1.42 1.42 0 0 1-1.445.83c-.636-.067-1.115-.394-1.513-.773-.245-.232-.496-.526-.739-.808-.126-.148-.25-.292-.368-.423-.728-.804-1.597-1.527-3.224-1.527-1.627 0-2.496.723-3.224 1.527-.119.131-.242.275-.368.423-.243.282-.494.575-.739.808-.398.38-.877.706-1.513.773a1.42 1.42 0 0 1-1.445-.83c-.27-.608-.352-1.395-.329-2.21.024-.826.16-1.73.365-2.606.206-.875.486-1.733.805-2.466.315-.722.687-1.364 1.094-1.772a2.34 2.34 0 0 1 .433-.335.504.504 0 0 1-.028-.079zm2.036.412c-.877.185-1.469.443-1.733.708-.276.276-.587.783-.885 1.465a13.748 13.748 0 0 0-.748 2.295 12.351 12.351 0 0 0-.339 2.406c-.022.755.062 1.368.243 1.776a.42.42 0 0 0 .426.24c.327-.034.61-.199.929-.502.212-.202.4-.423.615-.674.133-.156.276-.323.44-.504C4.861 9.969 5.978 9.027 8 9.027s3.139.942 3.965 1.855c.164.181.307.348.44.504.214.251.403.472.615.674.318.303.601.468.929.503a.42.42 0 0 0 .426-.241c.18-.408.265-1.02.243-1.776a12.354 12.354 0 0 0-.339-2.406 13.753 13.753 0 0 0-.748-2.295c-.298-.682-.61-1.19-.885-1.465-.264-.265-.856-.523-1.733-.708-.85-.179-1.877-.27-2.913-.27-1.036 0-2.063.091-2.913.27z"/>
+    </symbol>
+</svg>
+<main>
+    <div class="px-4 py-5 text-center">
+        <img class="mb-4 rounded-circle" src="kozlovskiy.jpg" alt="" width="128" height="128">
+        <h1 class="display-4 fw-bold">Козловский</h1>
+        <div class="col-md-7 mx-auto">
+            <p class="lead mb-4">Многофункциональный telegram-бот, который может отвечать на любые твои вопросы.
+                Также у бота есть много интересных функций</p>
+            <div class="d-grid justify-content-sm-center">
+                <a type="button" href="https://t.me/Kkoslovsskiy27_bot"
+                   class="btn btn-primary shadow-lg btn-lg rounded-pill fw-bold px-4">Открыть бота</a>
+            </div>
+        </div>
+    </div>
+    <div class="container px-4 py-5" style="display:none;">
+        <h2 class="pb-2 border-bottom">У бота есть:</h2>
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+            <div class="col d-flex align-items-start">
+                <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+                    <svg class="bi" width="1em" height="1em" viewBox="0 0 16 16"><use xlink:href="#cpu"/></svg>
+                </div>
+                <div>
+                    <h3 class="fs-2">Умный ИИ
+                        <svg xmlns="http://www.w3.org/2000/svg" width="0.6em" height="1em" class="bi"
+                             data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="
+                             Напиши боту: <b>Привет</b>, <b>Даня</b> или <b>Козловский</b> чтобы начать диалог.<br>
+                             Чтобы закончить, напиши <b>Пока</b>, <b>Стоп</b> или <b>Хватит</b>.">
+                            <use xlink:href="#question"></use>
+                        </svg>
+                    </h3>
+                    <p>Бот умеет поддерживать интеллектуальный разговор на любую тему</p>
+
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+                    <svg class="bi" width="1em" height="1em" viewBox="0 0 16 16"><use xlink:href="#mic"/></svg>
+                </div>
+                <div>
+                    <h3 class="fs-2">Расшифровка аудио
+                        <svg xmlns="http://www.w3.org/2000/svg" width="0.6em" height="1em" class="bi"
+                             data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="
+                             Напиши боту: <b>Привет</b>, <b>Даня</b> или <b>Козловский</b> чтобы начать диалог.<br>
+                             Чтобы закончить, напиши <b>Пока</b>, <b>Стоп</b> или <b>Хватит</b>.">
+                            <use xlink:href="#question"></use>
+                        </svg>
+                    </h3>
+                    <p>Бот умеет расшифровывать голосовые и видео сообщения</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+                    <svg class="bi" width="1em" height="1em" viewBox="0 0 16 16"><use xlink:href="#chat"/></svg>
+                </div>
+                <div>
+                    <h3 class="fs-2">Анонимный режим</h3>
+                    <p>Через бота можно писать анонимно другим пользователям</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+                    <svg class="bi" width="1em" height="1em" viewBox="0 0 16 16"><use xlink:href="#poll"/></svg>
+                </div>
+                <div>
+                    <h3 class="fs-2">Ответ на опрос
+                        <svg xmlns="http://www.w3.org/2000/svg" width="0.6em" height="1em" class="bi"
+                             data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="
+                             Напиши боту: <b>Привет</b>, <b>Даня</b> или <b>Козловский</b> чтобы начать диалог.<br>
+                             Чтобы закончить, напиши <b>Пока</b>, <b>Стоп</b> или <b>Хватит</b>.">
+                            <use xlink:href="#question"></use>
+                        </svg>
+                    </h3>
+                    <p>Бот умеет отвечать на опросы в чатах</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+                    <svg class="bi" width="1em" height="1em" viewBox="0 0 16 16"><use xlink:href="#dice"/></svg>
+                </div>
+                <div>
+                    <h3 class="fs-2">Генератор чисел
+                        <svg xmlns="http://www.w3.org/2000/svg" width="0.6em" height="1em" class="bi"
+                             data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="
+                             Напиши боту: <b>Привет</b>, <b>Даня</b> или <b>Козловский</b> чтобы начать диалог.<br>
+                             Чтобы закончить, напиши <b>Пока</b>, <b>Стоп</b> или <b>Хватит</b>.">
+                            <use xlink:href="#question"></use>
+                        </svg>
+                    </h3>
+                    <p>Бот умеет генерировать случайные числа</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+                    <svg class="bi" width="1em" height="1em" viewBox="0 0 16 16"><use xlink:href="#photo"/></svg>
+                </div>
+                <div>
+                    <h3 class="fs-2">Распознавание фото</h3>
+                    <p>Бот умеет искать, что изображено на фото</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+                    <svg class="bi" width="1em" height="1em" viewBox="0 0 16 16"><use xlink:href="#hd"/></svg>
+                </div>
+                <div>
+                    <h3 class="fs-2">Улучшение фото
+                        <svg xmlns="http://www.w3.org/2000/svg" width="0.6em" height="1em" class="bi"
+                             data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="
+                             Напиши боту: <b>Привет</b>, <b>Даня</b> или <b>Козловский</b> чтобы начать диалог.<br>
+                             Чтобы закончить, напиши <b>Пока</b>, <b>Стоп</b> или <b>Хватит</b>.">
+                            <use xlink:href="#question"></use>
+                        </svg>
+                    </h3>
+                    <p>Бот умеет улучшать качество фото с помощью ИИ</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+                    <svg class="bi" width="1em" height="1em" viewBox="0 0 16 16"><use xlink:href="#book"/></svg>
+                </div>
+                <div>
+                    <h3 class="fs-2">База конспектов
+
+                    </h3>
+                    <p>У бота есть база конспектов и готовых билетов для 7-11 классов</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+                    <svg class="bi" width="1em" height="1em" viewBox="0 0 16 16"><use xlink:href="#balloon"/></svg>
+                </div>
+                <div>
+                    <h3 class="fs-2">Поздравление с ДР</h3>
+                    <p>Бот умеет поздравлять с днём рождения</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+                    <svg class="bi" width="1em" height="1em" viewBox="0 0 16 16"><use xlink:href="#gamepad"/></svg>
+                </div>
+                <div>
+                    <h3 class="fs-2">Игра в города</h3>
+                    <p>Бот умеет играть в города</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="container px-4 text-start" id="icon-grid">
+        <h2 class="fw-bold pb-2 border-bottom text-center">У бота есть:</h2>
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4 py-4">
+            <div class="col d-flex align-items-start">
+                <svg xmlns="http://www.w3.org/2000/svg" class="bi text-muted flex-shrink-0 me-3" width="1.75em"
+                     height="1.75em"><use xlink:href="#cpu"/></svg>
+                <div>
+                    <h3 class="fw-bold mb-0 fs-4">Умный ИИ</h3>
+                    <p>Бот умеет поддерживать интеллектуальный разговор на любую тему</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <svg xmlns="http://www.w3.org/2000/svg" class="bi text-muted flex-shrink-0 me-3" width="1.75em"
+                     height="1.75em"><use xlink:href="#mic"/></svg>
+                <div>
+                    <h3 class="fw-bold mb-0 fs-4">Расшифровка аудио</h3>
+                    <p>Бот умеет расшифровывать голосовые и видео сообщения</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <svg xmlns="http://www.w3.org/2000/svg" class="bi text-muted flex-shrink-0 me-3" width="1.75em"
+                     height="1.75em"><use xlink:href="#chat"/></svg>
+                <div>
+                    <h3 class="fw-bold mb-0 fs-4">Анонимный режим</h3>
+                    <p>Через бота можно писать анонимно другим пользователям</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <svg xmlns="http://www.w3.org/2000/svg" class="bi text-muted flex-shrink-0 me-3" width="1.75em"
+                     height="1.75em"><use xlink:href="#poll"/></svg>
+                <div>
+                    <h3 class="fw-bold mb-0 fs-4">Ответ на опрос</h3>
+                    <p>Бот умеет отвечать на опросы в чатах</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <svg xmlns="http://www.w3.org/2000/svg" class="bi text-muted flex-shrink-0 me-3" width="1.75em"
+                     height="1.75em"><use xlink:href="#dice"/></svg>
+                <div>
+                    <h3 class="fw-bold mb-0 fs-4">Генератор чисел</h3>
+                    <p>Бот умеет генерировать случайные числа</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <svg xmlns="http://www.w3.org/2000/svg" class="bi text-muted flex-shrink-0 me-3" width="1.75em"
+                     height="1.75em"><use xlink:href="#photo"/></svg>
+                <div>
+                    <h3 class="fw-bold mb-0 fs-4">Распознавание фото</h3>
+                    <p>Бот умеет искать, что изображено на фото</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <svg xmlns="http://www.w3.org/2000/svg" class="bi text-muted flex-shrink-0 me-3" width="1.75em"
+                     height="1.75em"><use xlink:href="#hd"/></svg>
+                <div>
+                    <h3 class="fw-bold mb-0 fs-4">Улучшение фото</h3>
+                    <p>Бот умеет улучшать качество фото с помощью ИИ</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <svg xmlns="http://www.w3.org/2000/svg" class="bi text-muted flex-shrink-0 me-3" width="1.75em"
+                     height="1.75em"><use xlink:href="#book"/></svg>
+                <div>
+                    <h3 class="fw-bold mb-0 fs-4">База конспектов</h3>
+                    <p>У бота есть база конспектов и готовых билетов для 7-11 классов</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <svg xmlns="http://www.w3.org/2000/svg" class="bi text-muted flex-shrink-0 me-3" width="1.75em"
+                     height="1.75em"><use xlink:href="#balloon"/></svg>
+                <div>
+                    <h3 class="fw-bold mb-0 fs-4">Поздравление с ДР</h3>
+                    <p>Бот умеет поздравлять с днём рождения</p>
+                </div>
+            </div>
+            <div class="col d-flex align-items-start">
+                <svg xmlns="http://www.w3.org/2000/svg" class="bi text-muted flex-shrink-0 me-3" width="1.75em"
+                     height="1.75em"><use xlink:href="#gamepad"/></svg>
+                <div>
+                    <h3 class="fw-bold mb-0 fs-4">Игра в города</h3>
+                    <p>Бот умеет играть в города</p>
+                </div>
+            </div>
         </div>
     </div>
 </main>
-<div class="d-flex flex-column">
-    <p class="fs-5">Этот telegram-бот умеет:</p>
-    <ul class="fs-5 mx-auto text-start">
-        <li>Поддерживать интеллектуальный разговор на любую тему🧐</li>
-        <li>Расшифровывать голосовые и видео сообщения🎙️</li>
-        <li>Писать анонимно другим людям👨‍💻</li>
-        <li>Учавствовать в опросах❓</li>
-        <li>Генерировать случайные числа🎲</li>
-        <li>Искать, что изображено на картинке🖼️</li>
-        <li>Поздравлять с днём рождения🎉</li>
-        <li>Играть в города🏙</li>
-    </ul>
-    <a href="https://github.com/ComRSMaster/Kozlovskiy">Исходный код</a>
-    <br>
-    <a href="https://t.me/ComRSMaster">ComRSMaster (создатель)</a>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-OERcA2EqjJCMA+/3y+gxIOqMEjwtxJY7qPCqsdltbNJuaOe923+mo//f6V8Qbsw3"
+<footer class="container d-flex align-items-center py-3 mt-2 border-top">
+    <a href="https://t.me/Kkoslovsskiy27_bot" class="me-2">
+        <img src="kozlovskiy.jpg" class="rounded-circle" width="32" height="32">
+    </a>
+    <span class="text-muted me-auto">Kozlovskiy</span>
+
+    <a class="text-muted" href="https://github.com/ComRSMaster/Kozlovskiy">
+        <svg width="24" height="24">
+            <use xlink:href="#github"></use>
+        </svg>
+    </a>
+    <a class="text-muted ms-3" href="https://t.me/ComRSMaster">
+        <svg width="24" height="24">
+            <use xlink:href="#telegram"></use>
+        </svg>
+    </a>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-w76AqPfDkMBDXo30jS1Sgez6pr3x5MlQ1ZAGC+nuZB+EYdgRZgiwxhTBTkF7CXvN"
         crossorigin="anonymous"></script>
+<script>
+    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]')
+    const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl))
+</script>
+
 </body>
 </html>
