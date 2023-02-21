@@ -1,12 +1,14 @@
 #!/usr/bin/python3
-from mimetypes import guess_type
+import os
 from http import HTTPStatus
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from mimetypes import guess_type
 from socket import AF_INET6
 from socketserver import ThreadingMixIn
-import os
 
-token = ''
+from helpers.config import bot_token
+
+token = f'/{bot_token}'
 
 
 # noinspection PyUnusedLocal
@@ -54,9 +56,7 @@ class ThreadingSimpleServer(ThreadingMixIn, HTTPServer):
     address_family = AF_INET6
 
 
-def run_webserver(access_token):
-    global token
-    token = '/' + access_token
+def run_webserver():
     server = ThreadingSimpleServer((os.getenv("IP"), int(os.getenv("PORT"))), Handler)
 
     try:
