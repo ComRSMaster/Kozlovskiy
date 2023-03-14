@@ -51,7 +51,7 @@ def stt(file_id: str, reply_to_message=None):
         progress_id = bot.reply_to(reply_to_message, "Расшифровка...").message_id
 
     cmd = [f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'{sys.path[0]}/ffmpeg', '-n', '-i',
-           bot.get_file_url(file_id), '-ac', '1', '-ar', '48000', '-acodec', 'pcm_s16le', '-f', 's16le', 'pipe:']
+           bot.get_file_url(file_id), '-ac', '1', '-ar', '48000', '-acodec', 'flac', '-f', 'flac', 'pipe:']
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
     try:
@@ -61,7 +61,7 @@ def stt(file_id: str, reply_to_message=None):
 
         url = "http://www.google.com/speech-api/v2/recognize?client=chromium&lang=ru-RU&" \
               "key=AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw&pFilter=0"
-        response_text = requests.post(url, data=raw, headers={"Content-Type": "audio/l16; rate=48000;"}).text
+        response_text = requests.post(url, data=raw, headers={"Content-Type": f"audio/x-flac; rate=48000;"}).text
         actual_result = []
         for line in response_text.split("\n"):
             if not line:

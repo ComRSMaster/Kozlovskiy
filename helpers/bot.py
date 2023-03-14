@@ -28,7 +28,7 @@ def start_bot():
     if is_dev:
         bot.infinity_polling(skip_pending=True)
     else:
-        import webserver
+        from helpers import webserver
 
         bot.set_webhook(url=web_url + bot_token)
         webserver.parse_updates = lambda json_string: bot.process_new_updates(

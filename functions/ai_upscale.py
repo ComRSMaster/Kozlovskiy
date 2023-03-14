@@ -26,11 +26,14 @@ def upscale_cmd_handler(msg: Message):
                          "<b>✨Улучшение качества фото через нейросеть✨</b>\n\n"
                          "Чтобы улучшить фото, отправь его прямо сейчас <i>(желательно без сжатия)\n</i>"
                          "Также можно ответить командой <code>/up N</code> на уже отправленное фото, "
-                         "где N - масштаб улучшения, <i>(по умолчанию 2)</i>", 'HTML',
+                         "где N - масштаб улучшения, <i>(по умолчанию 2)</i>\n"
+                         f"Текущий масштаб: <b>{scale}</b>", 'HTML',
                          reply_markup=ForceReply(input_field_placeholder="Отправь фото"))
         users[str(msg.chat.id)]['s'] = 'up_photo'
+        users[str(msg.chat.id)]['sd'] = scale
         save()
-    gfpgan(msg.chat.id, file_id, scale)
+    else:
+        gfpgan(msg.chat.id, file_id, scale)
 
 
 def wait_photo_state(msg: Message):
@@ -40,10 +43,12 @@ def wait_photo_state(msg: Message):
         file_id = msg.document.file_id
     else:
         bot.send_message(msg.chat.id,
-                         "Можно улучшить только обычные фото или фото без сжатия, отправь фото ещё раз",
+                         "Можно улучшать только обычные фото или фото без сжатия.\n"
+                         "<b>Отправь фото ещё раз.</b>\n\n"
+                         "<i>Для отмены введи /cancel</i>", 'HTML',
                          reply_markup=ForceReply(input_field_placeholder="Отправь фото"))
         return
-    gfpgan(msg.chat.id, file_id, users[str(msg.chat.id)]['s'])
+    gfpgan(msg.chat.id, file_id, users[str(msg.chat.id)]['sd'])
     save()
 
 
@@ -67,10 +72,12 @@ def gfpgan(chat_id, file_id, scale):
             bot.send_document(chat_id, rec_json['output'])
         except ApiTelegramException:
             bot.send_message(chat_id, rec_json['output'])
+        users[str(chat_id)]['s'] = users[str(chat_id)]['sd'] = ''
+        save()
     elif rec_json['status'] == "canceled":
-        bot.send_message(chat_id, "<b>🛑 Команда отменена</b>", 'HTML')
+        bot.send_message(chat_id, "<b>🛑 Команда отменена!</b>", 'HTML')
     else:
         if rec_json['error'].startswith("local variable"):
             bot.send_message(chat_id, "<b>❌ Тип файла не поддерживается...</b>", 'HTML')
         else:
-            bot.send_message(chat_id, "<b>❌ Неизвестная ошибка...</b>", 'HTML')
+            bot.send_message(chat_id, f"<b>❌ Неизвестная ошибка...</b>", 'HTML')
