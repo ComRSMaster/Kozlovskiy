@@ -9,6 +9,7 @@ from threading import Thread
 from telebot.types import CallbackQuery, Message, ReplyKeyboardRemove
 from telebot.util import quick_markup
 
+from functions.casino import casino_cmd_handler, casino_handler, casino_balance_handler
 from functions.weather import weather_cmd_handler, change_city_button, search_city, update_weather_button
 from helpers import storage
 from functions.ai_talk import ai_talk
@@ -29,7 +30,7 @@ from helpers.update_chat import migrate_to_chat_id, new_private_cr, setup_bot_ha
 from helpers.utils import n
 
 content_types = ["text", "audio", "document", "photo", "sticker", "video", "video_note", "voice",
-                 "location", "contact", "poll", "chat_member", "game"]
+                 "location", "contact", "poll", "chat_member", "game", "dice"]
 
 
 @bot.middleware_handler(['message'])
@@ -97,6 +98,7 @@ decode_cmd_handler = bot.message_handler(['d'])(decode_cmd_handler)
 upscale_cmd_handler = bot.message_handler(['up'])(upscale_cmd_handler)
 delete_cmd_handler = bot.message_handler(['delete'])(delete_cmd_handler)
 weather_cmd_handler = bot.message_handler(['weather'])(weather_cmd_handler)
+casino_cmd_handler = bot.message_handler(['casino'])(casino_cmd_handler)
 
 
 @bot.message_handler(['kill_bot'])
@@ -167,6 +169,12 @@ def chatting(msg: Message):
     if msg.content_type == "poll":
         bot.send_message(msg.chat.id, random.choice(msg.poll.options).text, reply_to_message_id=msg.id)
     state = users[str(msg.chat.id)]['s']
+    if state == "casino":
+        casino_handler(msg)
+        return
+    if state == "balance":
+        casino_balance_handler(msg)
+        return
     if state == "wait_for_book_name":
         book_name_upload_state(msg)
         return

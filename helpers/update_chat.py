@@ -82,7 +82,7 @@ def new_group_cr(chat: Chat):
     chat_id = str(chat.id)
     if users.get(chat_id) is not None:
         return
-    users[chat_id] = {'s': ''}
+    users[chat_id] = {'s': '', 'balance': 1000}
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton(text="Ignore", callback_data="btn_ignore_" + chat_id))
     bot.send_message(admin_chat, "<b>Новая группа: " + chat.title + "  <pre>" +
@@ -93,7 +93,7 @@ def new_group_cr(chat: Chat):
 
 def new_private_cr(chat: Chat):
     chat_id = str(chat.id)
-    users[chat_id] = {'s': ''}
+    users[chat_id] = {'s': '', 'balance': 1000}
     bot.send_message(chat_id, help_text, 'HTML')
     bot.send_video(chat_id, success_vid, caption="<b>Чем я могу помочь?</b>🤔", parse_mode="HTML")
     ai_talk("/start", str(chat.id), start="Чем я могу помочь?🤔")

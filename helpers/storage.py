@@ -1,9 +1,5 @@
 import json
 
-import requests
-
-from helpers.config import is_dev, fb_url
-
 with open('db.json', encoding="utf-8") as bd_file:
     bd = json.load(bd_file)
 
@@ -23,6 +19,3 @@ def save():
     to_save = json.dumps(bd, ensure_ascii=False)
     with open('db.json', 'w', encoding='utf-8') as db_file1:
         db_file1.write(to_save)
-    if not is_dev:
-        requests.put(f'{fb_url}.json', data=to_save.encode("utf-8"),
-                     headers={"content-type": "application/json; charset=UTF-8"})

@@ -50,5 +50,5 @@ def ai_talk(msg_text, chat_id: str, is_private=True, args=None, start='', append
     else:
         bot.send_message(chat_id, answer)
     talk.append(answer)
-    talk = talk[-40:]
+    users[chat_id]["talk"] = talk[-40:]
     save()

@@ -8,7 +8,6 @@ replicate_key = os.getenv("replicate_key")
 weather_key = os.getenv("weather_key")
 tts_key = os.getenv("tts_key")
 web_url = os.getenv("web_url")
-fb_url = os.getenv("fb_url")
 
 config = configparser.ConfigParser()
 config.read("config.ini", encoding="utf8")  # читаем конфиг
