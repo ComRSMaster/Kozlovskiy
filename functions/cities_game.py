@@ -1,76 +1,97 @@
-import json
-import random
+from asyncio import ensure_future
+from random import choice
 
+import ujson
+from telebot.asyncio_filters import TextFilter
+from telebot.types import Message, CallbackQuery
 from telebot.util import quick_markup
 
 from helpers.bot import bot
 from helpers.config import ends
-from helpers.storage import users, save
+from helpers.long_texts import get_cities_text
+from helpers.db import BotDB
+from helpers.user_states import States
+from helpers.utils import nlp_stop
 
 with open('cities_easy.json', encoding="utf-8") as f:
-    cities_easy = json.loads(f.read())
+    cities_easy = ujson.load(f)
 
 with open('cities_hard.json', encoding="utf-8") as f:
-    cities_hard = json.loads(f.read())
+    cities_hard = ujson.load(f)
+
+comp_markup = quick_markup({"ЛЕГКО👌": {'callback_data': 'btn_complex_e'},
+                            "🔥ХАРДКОР🔥": {'callback_data': 'btn_complex_h'}})
 
 
-def get_city_letter(str_city, i=-1):
-    if str_city[i] in cities_easy:
-        return str_city[i]
-    return str_city[i - 1]
+def complex_name(comp):
+    return 'ХАРДКОР' if comp == 'h' else 'ЛЕГКО'
 
 
-def city_game_handler(chat_id, user_city, args):
-    if 'letter' in users[chat_id]:
-        if 'complex_msg' in users[chat_id]:
-            bot.edit_message_text(
-                f"<b>Запущена игра в города.</b>\n<i>Начинай первым!</i>\n\n"
-                f"Сложность: <b>{'ХАРДКОР' if users[chat_id]['complex'] == 'h' else 'ЛЕГКО'}</b>",
-                chat_id, users[chat_id]['complex_msg'], parse_mode="HTML")
-            users[chat_id].pop('complex_msg')
-        if any(s in args for s in ends):
-            users[chat_id].pop('letter')
-            users[chat_id].pop('complex')
-            users[chat_id].pop('complex_msg', 0)
-            bot.send_message(chat_id, "<b>Конец игры</b>", "HTML")
-            save()
-            return True
-        if user_city:
-            letter = users[chat_id]['letter']
-            if user_city[0] == letter or letter == '':
-                try:
-                    cities_db = cities_hard if users[chat_id]['complex'] == 'h' else cities_easy
-                    random_city = random.choice(cities_db[get_city_letter(user_city)])
-                    bot.send_message(chat_id, random_city)
-                    users[chat_id]['letter'] = get_city_letter(random_city)
-                    save()
-                except KeyError:
-                    bot.send_message(chat_id, "<b>Невозможно сгенерировать город</b>", "HTML")
-            else:
-                bot.send_message(chat_id, f"<b>Слово должно начинаться на букву:</b>  "
-                                          f"<i>{letter.upper()}</i>", "HTML")
-            return True
-    elif "в города" in user_city:
-        users[chat_id]['letter'] = ''
-        users[chat_id]['complex'] = 'e'
-        users[chat_id]['complex_msg'] = bot.send_message(
-            chat_id, "<b>Запущена игра в города.</b>\n<i>Начинай первым!</i>\n\n"
-                     "Сложность: <b>ЛЕГКО</b>\n⬇<i>Выбери сложность⬇</i>", "HTML",
-            reply_markup=quick_markup({"ЛЕГКО👌": {'callback_data': 'btn_complex_e'},
-                                       "🔥ХАРДКОР🔥": {'callback_data': 'btn_complex_h'}})).message_id
-        save()
-        return True
-    return False
+def get_city_letter(city, i=-1):
+    if len(city) < -i:
+        return False
+    if city[i].lower() in cities_easy:
+        return city[i].lower()
+    return get_city_letter(city, i - 1)
 
 
-def inline_btn_complex_change(data, call):
-    comp = data[-1:]
-    bot.answer_callback_query(call.id, f"Выбрана сложность: {'ХАРДКОР' if comp == 'h' else 'ЛЕГКО'}")
-    if users[str(call.message.chat.id)]['complex'] != comp:
-        bot.edit_message_text(
-            f"<b>Запущена игра в города.</b>\n<i>Начинай первым!</i>\n\n"
-            f"Сложность: <b>{'ХАРДКОР' if comp == 'h' else 'ЛЕГКО'}</b>\n⬇<i>Выбери сложность⬇</i>",
-            call.message.chat.id, users[str(call.message.chat.id)]['complex_msg'], parse_mode="HTML",
-            reply_markup=quick_markup({"ЛЕГКО👌": {'callback_data': 'btn_complex_e'},
-                                       "🔥ХАРДКОР🔥": {'callback_data': 'btn_complex_h'}}))
-        users[str(call.message.chat.id)]['complex'] = comp
+@bot.message_handler(['cities'])
+async def cities_cmd(msg: Message):
+    await BotDB.set_state(msg.chat.id, States.CITIES, {
+        'complex_msg': (await bot.send_message(
+            msg.chat.id, f"{get_cities_text('ЛЕГКО')}\n⬇ <i>Выбери сложность</i> ⬇",
+            reply_markup=comp_markup)).id,
+        'letter': '', 'complex': 'e'})
+
+
+@bot.message_handler(state=States.CITIES)
+async def cities_game_handler(msg: Message, data):
+    state_data = ujson.loads(data['state_data'])
+
+    if 'complex_msg' in state_data:
+        ensure_future(bot.edit_message_text(
+            get_cities_text(complex_name(state_data['complex'])), msg.chat.id, state_data.pop('complex_msg')))
+        await BotDB.set_state(msg.chat.id, States.CITIES, state_data)
+
+    if nlp_stop(msg.text):
+        await bot.send_message(msg.chat.id, "<b>Конец игры</b>")
+        await BotDB.set_state(msg.chat.id, -1)
+        return
+
+    letter = state_data['letter']
+    if msg.text[0].lower() != letter and letter != '':
+        await bot.send_message(msg.chat.id, f"<b>Город должен начинаться на букву:</b>  <i>{letter.upper()}</i>")
+        return
+
+    cities_db = cities_hard if state_data['complex'] == 'h' else cities_easy
+
+    user_letter = get_city_letter(msg.text)
+    if not user_letter:
+        await bot.send_message(msg.chat.id, '<b>Невозможно сгенерировать такой город</b>')
+        return
+
+    random_city = choice(cities_db[user_letter])
+    await bot.send_message(msg.chat.id, random_city)
+
+    state_data['letter'] = get_city_letter(random_city)
+    await BotDB.set_state(msg.chat.id, States.CITIES, state_data)
+
+
+@bot.callback_query_handler(None, text=TextFilter(starts_with='btn_complex'))
+async def inline_btn_complex_change(call: CallbackQuery):
+    state, data = await BotDB.get_state(call.message.chat.id)
+    if state != States.CITIES:
+        await bot.answer_callback_query(call.id, 'Запусти игру в города ещё раз!', True)
+        return
+
+    new_comp = call.data[-1:]  # Новая сложность
+    comp_text = complex_name(new_comp)
+    await bot.answer_callback_query(call.id, f"Выбрана сложность: {comp_text}")
+
+    if data['complex'] != new_comp:
+        await bot.edit_message_text(
+            f"{get_cities_text(comp_text)}\n⬇ <i>Выбери сложность</i> ⬇",
+            call.message.chat.id, data['complex_msg'], reply_markup=comp_markup)
+        data['complex'] = new_comp
+
+        await BotDB.set_state(call.message.chat.id, States.CITIES, data)

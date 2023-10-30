@@ -1,74 +1,102 @@
-import requests
-from telebot.apihelper import ApiTelegramException
-from telebot.types import Message, ReplyKeyboardMarkup, KeyboardButton, ForceReply, ReplyKeyboardRemove
+import aiohttp
+import ujson
+from telebot.asyncio_filters import TextFilter
+from telebot.asyncio_helper import ApiTelegramException
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ForceReply, Message, CallbackQuery, ReplyKeyboardRemove
 from telebot.util import quick_markup
 
 from helpers.bot import bot
 from helpers.config import weather_key
-from helpers.storage import users, save
+from helpers.db import BotDB
+from helpers.session_manager import auto_close
+from helpers.user_states import States
 
 weather_msg_markup = quick_markup({"Другой город": {'callback_data': "btn_change_city"},
                                    "Обновить 🔄️": {'callback_data': "btn_update_weather"}})
 select_private = ReplyKeyboardMarkup(True, input_field_placeholder="Введи город").add(
     KeyboardButton("Отправить своё местоположение", request_location=True))
 select_public = ForceReply(input_field_placeholder="Введи город")
-icon_to_emoji = {'01': "☀️", '02': "🌤", '03': "🌥", '04': "☁️", '09': "🌦️",
+weather_icons = {'01': "☀️", '02': "🌤", '03': "🌥", '04': "☁️", '09': "🌦️",
                  '10': "🌧", '11': "⛈", '13': "🌨️", '50': "🌫️"}
 
+weather_session = auto_close(
+    aiohttp.ClientSession('https://api.openweathermap.org', json_serialize=ujson.dumps))
 
-def weather_cmd_handler(msg: Message):
-    user = users[str(msg.chat.id)]
-    if 'lat' not in user:
-        change_city_button(msg.chat.id, msg.chat.type)
+
+def register_weather_handler():
+    bot.register_message_handler(weather_cmd_handler, commands=['weather'])
+    bot.register_message_handler(search_city, state=States.WAIT_GEO, content_types=['text', 'location'])
+    bot.register_callback_query_handler(change_city_button, None, text=TextFilter('btn_change_city'))
+    bot.register_callback_query_handler(update_weather_button, None, text=TextFilter('btn_update_weather'))
+
+
+async def weather_cmd_handler(msg: Message):
+    lat, lon = await BotDB.get_coord(msg.chat.id)
+
+    if not lat:
+        await change_city(msg.chat.id, msg.chat.type)
         return
-    bot.send_message(msg.chat.id, get_weather(user['lat'], user['lon']), 'HTML', reply_markup=weather_msg_markup)
+
+    await bot.send_message(msg.chat.id, await get_weather(lat, lon), reply_markup=weather_msg_markup)
 
 
-def change_city_button(chat_id, chat_type):
-    users[str(chat_id)]['s'] = "wait_for_city"
-    bot.send_message(chat_id, "Введи свой город или отправь своё местоположение",
-                     reply_markup=select_private if chat_type == 'private' else select_public)
+async def change_city_button(call: CallbackQuery):
+    await bot.answer_callback_query(call.id, "Введи свой город")
+    await change_city(call.message.chat.id, call.message.chat.type)
 
 
-def update_weather_button(call):
-    user = users[str(call.message.chat.id)]
+async def update_weather_button(call: CallbackQuery):
+    lat, lon = await BotDB.get_coord(call.message.chat.id)
+
     try:
-        bot.edit_message_text(get_weather(user['lat'], user['lon']), call.message.chat.id, call.message.message_id,
-                              parse_mode='HTML', reply_markup=weather_msg_markup)
-        bot.answer_callback_query(call.id, "Погода обновлена!")
+        await bot.edit_message_text(await get_weather(lat, lon), call.message.chat.id,
+                                    call.message.message_id, reply_markup=weather_msg_markup)
+        await bot.answer_callback_query(call.id, "Погода обновлена!")
+
     except ApiTelegramException:
-        bot.answer_callback_query(call.id, "Ничего не изменилось")
+        await bot.answer_callback_query(call.id, "Ничего не изменилось")
 
 
-def get_weather(lat, lon):
-    weather = requests.get(
-        f"https://api.openweathermap.org/data/2.5/weather?"
-        f"lat={lat}&lon={lon}&appid={weather_key}&lang=ru&units=metric").json()
-    name = weather['name'] if weather['name'] else f"Координаты: <i>{lat}, {lon}</i>"
-    return f"<b>{name}:  <i>{weather['main']['temp']}°C\n" \
-           f"{icon_to_emoji[weather['weather'][0]['icon'][:2]]} {weather['weather'][0]['description']}</i></b>\n" \
-           f"Ощущается как:  <b><i>{weather['main']['feels_like']}°C</i></b>\n\n" \
-           f"Давление:  <b><i>{weather['main']['pressure'] / 10}кПа</i></b>\n" \
-           f"Влажность:  <b><i>{weather['main']['humidity']}%</i></b>"
+async def change_city(chat_id, chat_type):
+    await bot.send_message(chat_id, "Введи свой город или отправь своё местоположение",
+                           reply_markup=select_private if chat_type == 'private' else select_public)
+    await BotDB.set_state(chat_id, States.WAIT_GEO)
 
 
-def search_city(msg: Message):
-    user = users[str(msg.chat.id)]
+async def get_weather(lat, lon):
+    async with weather_session.get(
+            '/data/2.5/weather', params={
+                'lat': lat, 'lon': lon, 'appid': weather_key, 'lang': 'ru', 'units': 'metric'}) as resp_raw:
+        weather = await resp_raw.json(loads=ujson.loads)
+
+        city = weather['name'] if weather['name'] else f"Координаты: <i>{lat}, {lon}</i>"
+        return \
+            f"<b>{city}:  <i>{weather['main']['temp']}°C\n" \
+            f"{weather_icons[weather['weather'][0]['icon'][:2]]} {weather['weather'][0]['description']}</i></b>\n" \
+            f"Ощущается как:  <b><i>{weather['main']['feels_like']}°C</i></b>\n\n" \
+            f"Давление:  <b><i>{weather['main']['pressure'] / 10}кПа</i></b>\n" \
+            f"Влажность:  <b><i>{weather['main']['humidity']}%</i></b>"
+
+
+async def search_city(msg: Message):
     if msg.content_type == 'location':
-        user['lat'] = msg.location.latitude
-        user['lon'] = msg.location.longitude
-    elif msg.text:
-        city_json = requests.get(
-            f"http://api.openweathermap.org/geo/1.0/direct?q={msg.text}&limit=1&appid={weather_key}").json()
-        if len(city_json) == 0:
-            bot.send_message(msg.chat.id, "Город не найден. Введи свой город ещё раз.\n/cancel - отмена",
-                             reply_markup=select_private if msg.chat.type == 'private' else select_public)
-            return
-        user['lat'] = city_json[0]['lat']
-        user['lon'] = city_json[0]['lon']
+        lat = msg.location.latitude
+        lon = msg.location.longitude
     else:
-        return
-    user['s'] = ''
-    bot.send_message(msg.chat.id, "Город успешно выбран!", reply_markup=ReplyKeyboardRemove())
-    weather_cmd_handler(msg)
-    save()
+        async with weather_session.get(
+                '/geo/1.0/direct', params={
+                    'q': msg.text, 'limit': 1, 'appid': weather_key}) as resp_raw:
+            city_json = await resp_raw.json(loads=ujson.loads)
+
+            if len(city_json) == 0:
+                await bot.send_message(msg.chat.id,
+                                       "<b>Город не найден. Введи свой город ещё раз.</b>\n/cancel - отмена",
+                                       reply_markup=select_private if msg.chat.type == 'private' else select_public)
+                return
+            lat = city_json[0]['lat']
+            lon = city_json[0]['lon']
+
+    await bot.send_message(msg.chat.id, "<b>Город успешно выбран!</b>", reply_markup=ReplyKeyboardRemove())
+    await BotDB.execute("UPDATE `users` SET `coord` = POINT(%s, %s), `state` = -1 WHERE `id` = %s",
+                        (lat, lon, msg.chat.id))
+    await weather_cmd_handler(msg)

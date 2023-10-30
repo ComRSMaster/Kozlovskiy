@@ -6,11 +6,21 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemo
 from telebot.util import quick_markup
 
 from helpers.bot import bot
-from helpers.storage import users, abstracts, save
+from helpers.db import BotDB
+from helpers.long_texts import book_orig_text
 from helpers.timer import ZoneInfo
 from helpers.utils import n
 
 
+@bot.message_handler(['books'])
+async def command_books(msg: Message):
+    await bot.send_message(
+        msg.chat.id, book_orig_text, reply_markup=quick_markup(
+            {grade[0]: {'callback_data': f'btn_grade_{grade[0]}'} for grade in
+             await BotDB.fetchall("SELECT DISTINCT `grade` FROM `books`")}, 5))
+
+
+@bot.message_handler(['done'])
 def done_cmd_handler(msg: Message):
     if users[str(msg.chat.id)]['s'] == "wait_for_done":
         users[str(msg.chat.id)]['s'] = "wait_for_pub"
@@ -33,7 +43,7 @@ def done_cmd_handler(msg: Message):
         book = f'{book} ({datetime.fromtimestamp(unix, ZoneInfo("Europe/Moscow")).year})'
         abstracts[grade][subject].append({'n': book, 'id': book_data['id'], 'a': book_data['z'], 't': unix})
         bot.send_message(msg.chat.id,
-                         f'<b>Ваш конспект "{book}" успешно выложен!\n🎓 {grade} класс, {subject}</b>', 'HTML',
+                         f'<b>Ваш конспект "{book}" успешно выложен!\n🎓 {grade} класс, {subject}</b>',
                          reply_markup=ReplyKeyboardRemove())
         users[str(msg.chat.id)]['s'] = ''
         users[str(msg.chat.id)].pop('sd')
@@ -49,7 +59,7 @@ def grade_inline_section(data, call):
         "<b>📕Конспекты и готовые билеты📙</b>\n\n"
         f"<b>🎓 Класс:</b> {grade}\nТеперь выберите нужный предмет, "
         "чтобы <i>найти</i> или <i>выложить</i> нужный конспект", call.message.chat.id, call.message.message_id,
-        parse_mode='HTML', reply_markup=quick_markup(subjects))
+        chat_id, reply_markup=quick_markup(subjects))
 
 
 def subject_inline_section(data, call):
@@ -68,7 +78,7 @@ def subject_inline_section(data, call):
         bot.edit_message_text(
             f"<b>📕Конспекты и готовые билеты📙</b>\n\n<b>🎓 Класс:</b> {grade}\n<b>📗 {subject}</b>\n\n"
             f"<b>Найдено конспектов:</b> {len(abstracts[grade][subject])}\n<i>Также ты можешь выложить свой "
-            f"конспект</i>", call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=markup)
+            f"конспект</i>", call.message.chat.id, call.message.message_id, chat_id, reply_markup=markup)
     except ApiTelegramException:
         bot.answer_callback_query(call.id, "Ничего нового😥", show_alert=True, cache_time=5)
 
@@ -89,17 +99,16 @@ def book_inline_section(data, call):
               f'{datetime.fromtimestamp(info["t"], ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M")}</b>'
     if len(docs) > 0:
         docs[-1].caption = caption
-        docs[-1].parse_mode = 'HTML'
     elif len(photos) > 0:
         photos[-1].caption = caption
-        photos[-1].parse_mode = 'HTML'
     else:
-        bot.send_message(call.message.chat.id, caption, 'HTML')
+        bot.send_message(call.message.chat.id, caption)
     for i in range(0, len(photos), 10):
         bot.send_media_group(call.message.chat.id, photos[i:i + 10])
     for i in range(0, len(docs), 10):
         bot.send_media_group(call.message.chat.id, docs[i:i + 10])
     bot.answer_callback_query(call.id, "Конспект отправлен!")
+
 
 def book_upload_button(data, call):
     fs = data.rfind("_")
@@ -109,12 +118,13 @@ def book_upload_button(data, call):
         call.message.chat.id,
         f'<b>🎓 Класс:</b> {grade}\n<b>📗 {subject}</b>\n\n'
         f'<b>Чтобы выложить свой конспект, напиши его <i>название</i></b> '
-        f'<i>(год будет подписан автоматически в его конце)</i>\n<i>/cancel - отмена</i>', 'HTML',
+        f'<i>(год будет подписан автоматически в его конце)</i>\n<i>/cancel - отмена</i>',
         reply_markup=ForceReply(input_field_placeholder="Введи название конспекта"))
     bot.answer_callback_query(call.id, "Следуй инструкциям!")
     users[str(call.message.chat.id)]['s'] = "wait_for_book_name"
     users[str(call.message.chat.id)]['sd'] = (grade, subject)
     save()
+
 
 def book_name_upload_state(msg: Message):
     name = n(msg.text) + n(msg.caption)
@@ -123,8 +133,8 @@ def book_name_upload_state(msg: Message):
         users[str(msg.chat.id)]['s'] = "wait_for_book"
         users[str(msg.chat.id)]['sd'] = {'id': {'d': [], 'p': [], 'u': ''}, 'data': (grade, subject, name),
                                          'a': {}, 'g': ''}
-        bot.send_message(msg.chat.id, f"Конспект успешно назван: <b>{name}</b>", 'HTML')
-        bot.send_message(msg.chat.id, f"<b>Теперь отправь файлы, фото, или ссылку с готовым конспектом</b>", 'HTML',
+        bot.send_message(msg.chat.id, f"Конспект успешно назван: <b>{name}</b>")
+        bot.send_message(msg.chat.id, f"<b>Теперь отправь файлы, фото, или ссылку с готовым конспектом</b>",
                          reply_markup=ForceReply(input_field_placeholder="Отправь конспект"))
         save()
     else:
@@ -140,7 +150,7 @@ def book_upload_state(msg: Message):
         users[str(msg.chat.id)]['sd']['id']['u'] += msg.text + '\n\n'
     else:
         bot.send_message(msg.chat.id, "<b>В конспекты можно отправлять только файлы, "
-                                      "ссылки, фото или фото без сжатия!</b>", 'HTML')
+                                      "ссылки, фото или фото без сжатия!</b>")
         save()
         return
     if msg.forward_from is not None:
@@ -150,7 +160,7 @@ def book_upload_state(msg: Message):
         users[str(msg.chat.id)]['sd']['d'] = msg.forward_date
     if msg.media_group_id is None or msg.media_group_id != users[str(msg.chat.id)]['sd']['g']:
         users[str(msg.chat.id)]['s'] = "wait_for_done"
-        bot.send_message(msg.chat.id, "<b>Чтобы выложить конспект, используй команду /done</b>", 'HTML')
+        bot.send_message(msg.chat.id, "<b>Чтобы выложить конспект, используй команду /done</b>")
     users[str(msg.chat.id)]['sd']['g'] = msg.media_group_id
     save()
 
@@ -172,7 +182,7 @@ def wait_user_upload_state(msg: Message, state):  # TODO код говно, на
                 author_name = f'<a href="tg://user?id={chat_id}">' \
                               f'{msg.contact.first_name + n(msg.contact.last_name, " ")}</a>'
                 bot.send_message(
-                    msg.chat.id, f"Конспект будет выложен от: <b>{author_name}</b> ?\n/done - выложить", 'HTML')
+                    msg.chat.id, f"Конспект будет выложен от: <b>{author_name}</b> ?\n/done - выложить")
                 users[str(msg.chat.id)]['sd']['z'] = str(chat_id)
                 save()
             else:
@@ -185,7 +195,7 @@ def wait_user_upload_state(msg: Message, state):  # TODO код говно, на
                           f'{msg.forward_from.first_name + n(msg.forward_from.last_name, " ")}</a>' \
                           f' {n(msg.forward_from.username, "@")}'
             bot.send_message(msg.chat.id, f"Конспект будет выложен от: <b>{author_name}</b>\n"
-                                          f"/done - выложить", 'HTML')
+                                          f"/done - выложить")
             users[str(msg.chat.id)]['sd']['z'] = str(chat_id)
             save()
         else:
@@ -200,7 +210,7 @@ def wait_user_upload_state(msg: Message, state):  # TODO код говно, на
                 chat_id = name[:ids]
                 name = name[ids + 2:]
             bot.send_message(msg.chat.id, f"Конспект будет выложен от: <b>{name}</b> ?\n"
-                                          f"/done - выложить", 'HTML')
+                                          f"/done - выложить")
             users[str(msg.chat.id)]['sd']["z"] = chat_id
             save()
         else:

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Шахматы</title>
+    <style>[data-bs-theme=dark] body {
+        background-color: #121212 !important;
+    }
+
+    html, body {
+        height: 100%;
+    }
+
+    main {
+        height: calc(100% - 2rem - 30px);
+    }
+
+    .bg-1 {
+        background-color: #f8f9fa;
+    }
+
+    [data-bs-theme=dark] .bg-1 {
+        background-color: #181818 !important;
+    }
+
+    .bi {
+        width: 1em;
+        height: 1em;
+        vertical-align: -0.125em;
+        fill: currentcolor;
+    }
+
+    .table > :not(caption) > * > * {
+        background-color: transparent !important;
+    }
+
+    .fs-l {
+        font-size: 1.1rem;
+    }
+
+    .chess {
+        max-width: calc(100vh - 4rem - 98px) !important;
+    }
+
+    .hide-scroll::-webkit-scrollbar {
+        display: none; /* Safari and Chrome */
+    }
+    </style>
+    <link rel="stylesheet" href="lib/chessboard-lite.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
+</head>
+<body>
+<main class="row justify-content-center align-items-center g-0 m-0">
+    <div class="col chess">
+        <div class="d-flex align-items-center fs-l fw-medium m-2">
+            <div class="position-relative me-2 fs-6">
+                <img class="rounded-circle" src="../kozlovskiy.jpg" loading="lazy" width="34" height="34"
+                     alt="Аватарка противника">
+                <span class="position-absolute translate-middle rounded-circle"
+                      style="background-color: #95D062; padding: 0.18rem; left: 88%; top: 88%">
+                        <span class="visually-hidden">В сети</span></span>
+            </div>
+            <div class="text-truncate" id="op_name">Козловский</div>
+            <svg xmlns="http://www.w3.org/2000/svg" class="bi ms-2" viewBox="0 0 16 16" aria-label="Настройки"
+                 data-bs-toggle="modal"
+                 data-bs-target="#startModal">
+                <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
+            </svg>
+            <div id="game-status"
+                 class="ms-auto badge text-truncate bg-body-tertiary text-light-emphasis rounded-pill shadow-sm"
+                 style="display: none">Ожидание соперника
+            </div>
+        </div>
+        <div class="shadow" id="board"></div>
+        <div class="d-flex align-items-center fs-l fw-medium m-2">
+            <img class="rounded-circle me-2" src="../p/AQADU8YxG3FMwUoAAQ.jpg" loading="lazy" width="34" height="34"
+                 alt="Ваша аватарка">
+            <div class="text-truncate" id="my_name">Вы</div>
+            <div id="wait-self"
+                 class="ms-auto badge text-truncate bg-body-tertiary text-light-emphasis rounded-pill shadow-sm">Ваш ход
+            </div>
+        </div>
+    </div>
+</main>
+
+<nav class="navbar navbar-expand fixed-bottom bg-1 shadow gap-2 px-2">
+    <div id="histLine" class="flex-fill overflow-x-auto hide-scroll text-nowrap fs-l ps-1"></div>
+    <button type="button" class="btn btn-lg bg-1 border-0 undo-btn"
+            aria-label="Отменить" disabled="disabled" onclick="ai.postMessage({'cmd': 'undo'})">
+        <svg xmlns="http://www.w3.org/2000/svg" class="bi" viewBox="0 0 16 16">
+            <path fill-rule="evenodd"
+                  d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2v1z"/>
+            <path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466z"/>
+        </svg>
+    </button>
+    <button type="button" class="btn btn-lg bg-1 border-0 redo-btn"
+            aria-label="Вернуть" disabled="disabled" onclick="ai.postMessage({'cmd': 'redo'})">
+        <svg xmlns="http://www.w3.org/2000/svg" class="bi" viewBox="0 0 16 16">
+            <path fill-rule="evenodd"
+                  d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+        </svg>
+    </button>
+</nav>
+<!-- Настройки -->
+<div class="modal fade" id="startModal" tabindex="-1" aria-labelledby="Настройки" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Настройки</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <label for="search-depth" class="form-label">Сложность</label>
+                <select id="search-depth" class="ms-2 w-auto form-select d-inline-block">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3" selected>3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- Мат -->
+<div class="modal fade" id="endGameModal" tabindex="-1" aria-labelledby="Мат" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="endGameModalTitle"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="endGameModalBody">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+<script src="https://code.jquery.com/jquery-3.6.4.min.js"
+        integrity="sha256-oP6HI9z1XaZNBrJURtCoUT5SUnxFr8s3BzRl+cbzUq8=" crossorigin="anonymous"></script>
+<script src="lib/chessboard-lite.js"></script>
+<script src="main.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz"
+        crossorigin="anonymous"></script>
+<script>
+    let size = 100;
+    function zoom(e) {
+        console.log(e)
+        size = size / e.deltaY
+        e.target.style.backgroundSize = size + 'px'
+    }
+    document.getElementById('board').onwheel = zoom
+</script>
+</html>

@@ -1,9 +1,9 @@
 .idea/
 __pycache__/
 .handler-saves/
+.state-save/
 venv/
 ffmpeg.exe
 ffmpeg
 db.json
-firebase-key.json
 website/p/*

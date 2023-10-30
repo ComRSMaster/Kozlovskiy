@@ -1,5 +1,13 @@
+ujson
 beautifulsoup4
 lxml
 tzdata
 pyTelegramBotAPI
-requests
+uvicorn
+websockets
+starlette
+aiomysql
+aiohttp
+cryptography
+chess
+PyOgg @ git+https://github.com/TeamPyOgg/PyOgg

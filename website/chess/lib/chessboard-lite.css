@@ -1,0 +1,79 @@
+/*! lite version of chessboard.js v1.0.0 | (c) 2019 Chris Oakman | MIT License chessboardjs.com/license */
+
+#board {
+    touch-action: none;
+    user-select: none;
+    aspect-ratio: 1;
+    background-image: url("../board.svg");
+    position: relative;
+}
+
+square {
+    position: absolute;
+    width: var(--square-size);
+    height: var(--square-size);
+}
+
+.piece {
+    background-size: cover;
+    will-change: transform;
+    z-index: 5;
+    pointer-events: none;
+    cursor: pointer;
+}
+
+.dest {
+    background: radial-gradient(rgba(20, 85, 30, .5) 19%, rgba(0, 0, 0, 0) 20%);
+}
+
+.dest.eat {
+    background: radial-gradient(transparent 0%, transparent 79%, rgba(20, 85, 0, 0.3) 80%);
+}
+
+.selected {
+    background: rgba(20, 85, 30, .5);
+}
+
+.dest:hover {
+    background: rgba(20, 85, 30, .3);
+}
+
+.check {
+    background: radial-gradient(circle, rgb(255, 0, 0) 0%, rgb(231, 0, 0) 25%, rgba(169, 0, 0, 0) 89%, rgba(158, 0, 0, 0) 100%);
+}
+
+.files, .ranks {
+    position: absolute;
+    display: flex;
+    color: #f0d9b5;
+    font-size: calc(var(--square-size) / 4.2);
+}
+
+.files {
+    bottom: 0;
+    left: 0;
+    width: 100%;
+}
+
+.ranks {
+    flex-flow: column;
+    top: 0;
+    right: 0;
+    height: 100%;
+}
+
+.files > * {
+    flex: 1 1 auto;
+    padding-left: 4px;
+    height: 1.4em;
+}
+
+.ranks > * {
+    flex: 1 1 auto;
+    padding-top: 4px;
+    width: 0.8em;
+}
+
+.files > *:nth-child(2n), .ranks > *:nth-child(2n) {
+    color: #b58863;
+}

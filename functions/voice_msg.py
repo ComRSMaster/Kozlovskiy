@@ -1,95 +1,101 @@
-import json
+import asyncio
 import re
-import subprocess
-import sys
 
-import requests
-import telebot
+import aiohttp
+import ujson
 from telebot.types import Message
 
 from helpers.bot import bot
-from helpers.config import tts_key
+from helpers.config import assemblyai_key
+from helpers.session_manager import auto_close
 
-re_emoji = re.compile(u"[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]+",
-                      flags=re.UNICODE)
+RE_EMOJI = re.compile("["
+                      u"\U0001F600-\U0001F64F"  # emoticons
+                      u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+                      u"\U0001F680-\U0001F6FF"  # transport & map symbols
+                      u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
+                      u"\U00002702-\U000027B0"
+                      u"\U000024C2-\U0001F251"
+                      "]+", flags=re.UNICODE)
+
+assemblyai_session = auto_close(
+    aiohttp.ClientSession('https://api.assemblyai.com', json_serialize=ujson.dumps))
+tts_session = auto_close(aiohttp.ClientSession('https://api.voicerss.org'))
 
 
-def decode_cmd_handler(msg: Message):
+def register_voice_msg_handler():
+    bot.register_message_handler(decode_cmd_handler, commands=['d'])
+
+
+async def decode_cmd_handler(msg: Message):
     file_id = get_voice_id(msg, True)
     if file_id is None:
-        bot.send_message(msg.chat.id,
-                         "<b>Ответьте на голосовое/видео сообщение командой /d, чтобы его расшифровать.</b>"
-                         "\n<i>Если вы сделали всё правильно и видите это сообщение, "
-                         "то перешлите сюда это голосовое</i>", 'HTML')
+        await bot.send_message(msg.chat.id,
+                               "<b>Ответьте на голосовое/видео сообщение командой /d, чтобы его расшифровать.</b>"
+                               "\n<i>Если вы сделали всё правильно и видите это сообщение, "
+                               "то перешлите сюда это голосовое</i>")
     else:
-        stt(file_id, msg.reply_to_message)
+        progress_id = (await bot.reply_to(msg.reply_to_message, "Расшифровка...")).id
+
+        await bot.edit_message_text(await stt(file_id, True), msg.reply_to_message.chat.id, progress_id)
 
 
-def get_voice_id(msg: telebot.types.Message, reply: bool):
+def get_voice_id(msg: Message, reply: bool):
     if reply:
         if msg.reply_to_message is None:
             return None
-        msg1 = msg.reply_to_message
-    else:
-        msg1 = msg
+        msg = msg.reply_to_message
     file_id = None
-    if msg1.content_type == "voice":
-        file_id = msg1.voice.file_id
-    elif msg1.content_type == "audio":
-        file_id = msg1.audio.file_id
-    elif msg1.content_type == "video_note":
-        file_id = msg1.video_note.file_id
-    elif msg1.content_type == "video":
-        file_id = msg1.video.file_id
+    if msg.content_type == "voice":
+        file_id = msg.voice.file_id
+    elif msg.content_type == "audio":
+        file_id = msg.audio.file_id
+    elif msg.content_type == "video_note":
+        file_id = msg.video_note.file_id
+    elif msg.content_type == "video":
+        file_id = msg.video.file_id
     return file_id
 
 
-def stt(file_id: str, reply_to_message=None):
-    stats = reply_to_message is not None
-    progress_id = -1
-    if stats:
-        progress_id = bot.reply_to(reply_to_message, "Расшифровка...").message_id
+async def stt(file_id: str, stats):
+    headers = {"authorization": assemblyai_key}
 
-    cmd = [f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'{sys.path[0]}/ffmpeg', '-n', '-i',
-           bot.get_file_url(file_id), '-ac', '1', '-ar', '48000', '-acodec', 'flac', '-f', 'flac', 'pipe:']
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    async with assemblyai_session.post('/v2/transcript',
+                                       json={"audio_url": await bot.get_file_url(file_id), "language_code": 'ru'},
+                                       headers=headers) as response:
+        transcript_id = (await response.json(loads=ujson.loads))['id']
 
-    try:
-        raw = proc.stdout.read()
-        if stats:
-            bot.edit_message_text("Расшифровка... 50%", reply_to_message.chat.id, progress_id)
+    while True:
+        async with assemblyai_session.get(f'/v2/transcript/{transcript_id}',
+                                          headers=headers) as result_raw:
+            result = await result_raw.json(loads=ujson.loads)
+            print(result)
 
-        url = "http://www.google.com/speech-api/v2/recognize?client=chromium&lang=ru-RU&" \
-              "key=AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw&pFilter=0"
-        response_text = requests.post(url, data=raw, headers={"Content-Type": f"audio/x-flac; rate=48000;"}).text
-        actual_result = []
-        for line in response_text.split("\n"):
-            if not line:
-                continue
-            current_result = json.loads(line)["result"]
-            if len(current_result) != 0:
-                actual_result = current_result[0]
-                break
-        if not isinstance(actual_result, dict) or len(actual_result.get("alternative", [])) == 0:
-            result = ''
-        else:
-            best_hypothesis = max(actual_result["alternative"], key=lambda alternative: alternative[
-                "confidence"]) if "confidence" in actual_result["alternative"] else actual_result["alternative"][0]
-            result = '' if "transcript" not in best_hypothesis else best_hypothesis["transcript"]
-    except requests.exceptions.RequestException as e:
-        result = f"❌Возникла ошибка: {e}" if stats else "Скажи что-нибудь"
-    if not result:
-        result = "Тут ничего нет🤔" if stats else "Скажи что-нибудь"
+        if result['status'] == 'completed':
+            text = result['text']
+            break
 
-    if stats:
-        bot.edit_message_text(result, reply_to_message.chat.id, progress_id)
+        elif result['status'] == 'error':
+            text = f"❌ Возникла ошибка: {result['error']}" if stats else "Скажи что-нибудь"
+            break
 
-    return result
+        await asyncio.sleep(2)
 
+    if not text:
+        text = "Тут ничего нет🤔" if stats else "Скажи что-нибудь"
 
-def tts(text: str):
-    cmd = [f'{sys.path[0]}\\ffmpeg.exe' if sys.platform == "win32" else f'{sys.path[0]}/ffmpeg', '-n', '-i',
-           f"https://api.voicerss.org/?key={tts_key}&hl=ru-RU&v=Peter&r=2&f=24khz_16bit_mono&"
-           f"src={re_emoji.sub(r'', text)}", '-ac', '1', '-ar', '24000', '-acodec', 'libopus', '-f', 'opus', 'pipe:']
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    return proc.communicate()[0]
+    print(text)
+    return text
+
+# async def tts(text: str):
+#     async with tts_session.post(
+#             f"/?key={tts_key}&hl=ru-RU&v=Peter&r=2&f=24khz_16bit_mono&"
+#             f"src={RE_EMOJI.sub(r'', text)}") as response:
+#         pcm = await response.read()
+#
+#         opus_encoder = OpusEncoder()
+#         opus_encoder.set_application("voip")
+#         opus_encoder.set_sampling_frequency(24000)
+#         opus_encoder.set_channels(1)
+#
+#         return opus_encoder.encode(pcm)

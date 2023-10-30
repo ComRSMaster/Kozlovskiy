@@ -1,24 +1,42 @@
+from asyncio import ensure_future
+
 from telebot.apihelper import ApiTelegramException
-from telebot.types import Chat, Message, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, InputMediaPhoto
-from telebot.util import quick_markup, extract_arguments, chunks
+from telebot.asyncio_filters import TextFilter
+from telebot.types import Chat, Message, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, \
+    InputMediaPhoto, PhotoSize, CallbackQuery, ReplyKeyboardRemove
+from telebot.util import quick_markup, chunks, content_type_media, extract_arguments
 
 from helpers.bot import bot
 from helpers.config import web_url
 from helpers.long_texts import chat_cmd_desc
-from helpers.storage import chat_msg_pen, chat_msg_my, current_users, chat_id_pen, chat_id_my, save, users, images
-from helpers.utils import n
+from helpers.db import BotDB
+from helpers.user_states import States
+from helpers.utils import n, user_link
 
 
-def chat_cmd_handler(msg: Message):
+def register_chat_handlers():
+    bot.register_message_handler(chat_cmd_handler, commands=['chat'])
+    bot.register_message_handler(delete_cmd_handler, commands=['delete'])
+    bot.register_message_handler(end_chat, state=States.CHATTING, commands=['cancel'])
+    bot.register_message_handler(transfer_to_target, state=States.CHATTING, content_types=content_type_media)
+
+    bot.register_callback_query_handler(profile_photo_button, None, text=TextFilter(starts_with='btn_photo'))
+    bot.register_callback_query_handler(pinned_msg_button, None, text=TextFilter(starts_with='btn_pinned'))
+
+    bot.register_edited_message_handler(edit_msg_handler, content_types=content_type_media)
+    bot.register_inline_handler(inline_query_photo, None)
+
+
+async def chat_cmd_handler(msg: Message):
     chat_id = extract_arguments(msg.text)
     if chat_id:
-        start_chat(str(msg.chat.id), chat_id)
+        await start_chat(msg.chat.id, chat_id)
     else:
-        bot.send_message(
-            msg.chat.id, chat_cmd_desc, "HTML",
+        await bot.send_message(
+            msg.chat.id, chat_cmd_desc,
             reply_markup=quick_markup({'Выбрать чат 💬': {'switch_inline_query_current_chat': ''}}))
         # bot.send_message(
-        #     msg.chat.id, "", "HTML",
+        #     msg.chat.id, "",
         #     reply_markup=ReplyKeyboardMarkup(True).add(
         #         KeyboardButton(
         #             "Выбрать пользователя", request_user=KeyboardButtonRequestUser(
@@ -28,116 +46,107 @@ def chat_cmd_handler(msg: Message):
         #                 random.randint(-2147483640, 2147483640), False))))
 
 
-def inline_query_photo(inline_query: InlineQuery):
+async def inline_query_photo(inline_query: InlineQuery):
     results = []
-    index = 0
-    for u in users:
-        index += 1
+    offset = int(inline_query.offset) if inline_query.offset else 0
+    query = f'%{inline_query.query}%'
+
+    for u in await BotDB.fetchall(
+            "SELECT `id`, `name`, `desc`, `photo_id`, `is_private` FROM `users`"
+            "WHERE `only_chess` = 0 AND (`name` LIKE %s OR `desc` LIKE %s)"
+            "ORDER BY `name` LIMIT %s, %s", (query, query, offset, 50)):
         results.append(InlineQueryResultArticle(
-            index, users[u]['name'], InputTextMessageContent("/chat " + u),
-            description=users[u]['desc'] + "\nНажмите, чтобы написать " + (
-                "этому человеку" if users[u]['private'] else "в эту группу"),
-            thumb_url=None if users[u]['photo_id'] is None else f'{web_url}p/{users[u]["photo_id"]}.jpg'))
-    bot.answer_inline_query(inline_query.id, results)
+            u[0], u[1], InputTextMessageContent(f"/chat {u[0]}"),
+            description=f"{u[2] or ''}\nНажмите, чтобы написать {'этому человеку' if u[4] else 'в эту группу'}",
+            thumbnail_url=None if u[3] is None else f'{web_url}p/{u[3]}.jpg'))
+
+    await bot.answer_inline_query(inline_query.id, results,
+                                  next_offset='' if len(results) != 50 else int(offset) + 50)
 
 
-def start_chat(chat_id, chat):
+async def start_chat(chat_id: int, target_chat: str):
     try:
-        if chat == chat_id:
-            bot.send_message(chat_id, "<b>Нельзя писать самому себе через Козловского.</b>", 'HTML')
+        target_chat = int(target_chat)
+
+        if target_chat == chat_id:
+            await bot.send_message(chat_id, "<b>Нельзя писать самому себе через Козловского.</b>")
             return
-        if chat_id in chat_id_my:
-            bot.send_message(chat_id, "<b>Вы уже пишете кому-то через Козловского.\n"
-                                      "Чтобы закончить, введите /cancel</b>", 'HTML')
-            return
-        chat_info = bot.get_chat(chat)
-        elem = {}
-        if chat_info.photo is not None:
-            elem["Посмотреть фото профиля"] = {'callback_data': "btn_photo_" + chat}
-        p_msg = chat_info.pinned_message
-        if p_msg is not None:
-            elem["Посмотреть закреп"] = {
-                'callback_data': f"btn_pinned_{p_msg.chat.id}_{p_msg.message_id}_{p_msg.from_user.first_name}"}
-        bot.send_message(chat_id, parse_chat(chat_info) +
-                         "\n\n<b>/cancel - закончить переписку\n/delete - удалить сообщение у собеседника</b>", 'HTML',
-                         reply_markup=quick_markup(elem, row_width=3))
-        chat_id_my.append(chat_id)
-        chat_id_pen.append(chat)
-        current_users.append("")
-        chat_msg_my.append([])
-        chat_msg_pen.append([])
-        save()
-    except ApiTelegramException:
-        bot.send_message(chat_id, "<b>Чат не найден</b>", 'HTML')
+
+        chat_info = await bot.get_chat(target_chat)
+    except (ApiTelegramException, ValueError):
+        await bot.send_message(chat_id, "<b>Чат не найден</b>")
+        return
+
+    markup = {}
+    if chat_info.photo is not None:
+        markup["Посмотреть фото профиля"] = {'callback_data': f"btn_photo_{target_chat}"}
+
+    p_msg = chat_info.pinned_message
+    if p_msg is not None:
+        markup["Посмотреть закреп"] = {
+            'callback_data': f"btn_pinned_{p_msg.chat.id}_{p_msg.message_id}_{p_msg.from_user.first_name}"}
+
+    await bot.send_message(chat_id, await parse_chat(chat_info) +
+                           "\n\n<b>/cancel - закончить переписку\n/delete - удалить сообщение у собеседника</b>",
+                           reply_markup=quick_markup(markup, 1))
+    await BotDB.execute("INSERT INTO chats (initiator, target) VALUES (%s, %s)", (chat_id, target_chat))
+    await BotDB.set_state(chat_id, States.CHATTING, target_chat)
 
 
-def parse_chat(chat: Chat):
+async def parse_chat(chat: Chat):
     text = ""
     if chat.type == "private":
-        text += '<b>Начат чат с<a href="tg://user?id=' + str(chat.id) + '">: ' + chat.first_name + \
+        text += f'<b>Начат чат с<a href="tg://user?id={chat.id}">: {chat.first_name}' + \
                 n(chat.last_name, ' ') + '</a></b>' + n(chat.bio, '\n<b>Описание:</b> ') + n(chat.username, '\n@')
     elif chat.type == "channel":
         return str(todict(chat))
     else:
-        text += "<b>Начат чат с группой:</b> " + chat.title + n(chat.description, '\n<b>Описание:</b> ') + \
+        text += f'<b>Начат чат с группой:</b> {chat.title}' + n(chat.description, '\n<b>Описание:</b> ') + \
                 n(chat.username, '\n@') + n(chat.invite_link, '\n<b>Ссылка:</b> ')
         try:
-            text += n(str(bot.get_chat_member_count(chat.id)), '\n<b>Участников:</b> ')
-            text += "\n<b>Админы:</b> "
-            for m in bot.get_chat_administrators(chat.id):
-                text += '\n\n<b><a href="tg://user?id=' + str(m.user.id) + '">' + m.user.first_name + \
-                        '</a></b> <pre>' + str(m.user.id) + '</pre> ' + n(m.user.username, '\n@')
+            text += f'\n<b>Участников:</b> {await bot.get_chat_member_count(chat.id)}\n<b>Админы:</b> '
+            for m in await bot.get_chat_administrators(chat.id):
+                text += '\n\n' + user_link(m.user, True) + n(m.user.username, ' @')
         except ApiTelegramException:
             pass
     return text
 
 
-def profile_photo_button(data, call):
-    chat_id = data[data.rfind("_") + 1:]
+async def profile_photo_button(call: CallbackQuery):
+    chat_id = int(call.data[call.data.rfind("_") + 1:])
     try:
-        chat_info = bot.get_chat(chat_id)
+        chat_info = await bot.get_chat(chat_id)
     except ApiTelegramException:
-        bot.answer_callback_query(call.id, "Чат не найден!")
+        await bot.answer_callback_query(call.id, "Чат не найден!")
         return
     if chat_info.photo is None:
-        bot.answer_callback_query(call.id, "Фото профиля не найдены!")
+        await bot.answer_callback_query(call.id, "Фото профиля не найдены!")
         return
+
     if chat_info.type == "private":
-        profile_photos: list = bot.get_user_profile_photos(int(chat_id)).photos
-        media_group = []
-        k = 0
-        for c in chunks(profile_photos, 10):
-            bot.send_chat_action(call.message.chat.id, action="upload_photo")
-            for p in c:
-                k += 1
-                media_group.append(InputMediaPhoto(
-                    images[p[-1].file_id] if p[-1].file_id in images else
-                    bot.download_file(bot.get_file(p[-1].file_id).file_path)))
-            sent_photos = bot.send_media_group(call.message.chat.id, media_group)
-            for i in range(len(sent_photos)):
-                images[profile_photos[k - len(c) + i][-1].file_id] = sent_photos[i].photo[-1].file_id
-            media_group.clear()
+        profile_photos = (await bot.get_user_profile_photos(chat_id)).photos
+
+        for chunk in chunks(profile_photos, 10):
+            media_group = [InputMediaPhoto(p[-1].file_id) for p in chunk]
+            ensure_future(bot.send_media_group(call.message.chat.id, media_group))
     else:
-        bot.send_chat_action(call.message.chat.id, action="upload_photo")
-        file_id = chat_info.photo.big_file_id
-        photo_id = images[file_id] if file_id in images else bot.download_file(bot.get_file(file_id).file_path)
-        images[file_id] = bot.send_photo(call.message.chat.id, photo_id).photo[-1].file_id
-    bot.answer_callback_query(call.id, "Фото отправлены!")
-    save()
+        await bot.send_photo(call.message.chat.id,
+                             await bot.download_file((await bot.get_file(chat_info.photo.big_file_id)).file_path))
+    await bot.answer_callback_query(call.id, "Фото отправлены!")
 
 
-def pinned_msg_button(data, call):
-    forward = data.split("_")
+async def pinned_msg_button(call: CallbackQuery):
+    forward = call.data.split("_")
     try:
-        bot.forward_message(call.message.chat.id, forward[2], int(forward[3]))
+        await bot.forward_message(call.message.chat.id, forward[2], int(forward[3]))
     except ApiTelegramException:
         try:
-            bot.send_message(call.message.chat.id, f"<b>Закреп от: {forward[4]}</b>", 'HTML')
-            bot.copy_message(call.message.chat.id, forward[2], int(forward[3]))
+            await bot.send_message(call.message.chat.id, f"<b>Закреп от: {forward[4]}</b>")
+            await bot.copy_message(call.message.chat.id, forward[2], int(forward[3]))
         except ApiTelegramException:
-            bot.answer_callback_query(call.id, "Сообщение не закреплено!")
+            await bot.answer_callback_query(call.id, "Сообщение не закреплено!")
             return
-    bot.answer_callback_query(call.id, "Закреп отправлен!")
+    await bot.answer_callback_query(call.id, "Закреп отправлен!")
 
 
 def todict(obj):
@@ -150,52 +159,61 @@ def todict(obj):
     return data
 
 
-def transfer_to_me(msg: Message):
+async def transfer_to_target(msg: Message, data):
+    target_id = data['state_data']
+
+    reply = None
+    if msg.reply_to_message is not None:
+        reply = await BotDB.fetchone(
+            "SELECT target_msg_id FROM chat_msgs WHERE chat_id = %s AND initiator_msg_id = %s",
+            (msg.chat.id, msg.reply_to_message.id))
+
     try:
-        my_index = chat_id_my.index(str(msg.chat.id))  # мы
-        reply = None
-        try:
-            reply = chat_msg_pen[my_index][chat_msg_my[my_index].index(msg.reply_to_message.message_id)]
-        except AttributeError:
-            pass
-        chat_msg_my[my_index].append(msg.id)
-        chat_msg_pen[my_index].append(bot.copy_message(chat_id_pen[my_index], msg.chat.id, msg.id,
-                                                       reply_to_message_id=reply).message_id)
-        save()
-        return True
+        copied_id = (await bot.copy_message(target_id, msg.chat.id, msg.id, reply_to_message_id=reply)).message_id
+        await BotDB.execute("INSERT INTO chat_msgs (chat_id, initiator_msg_id, target_msg_id) VALUES (%s, %s, %s)",
+                            (msg.chat.id, msg.id, copied_id))
     except ApiTelegramException as err:
-        bot.send_message(msg.chat.id, "<b>Этому человеку невозможно написать через Козловского.</b>"
-                                      "<i>(" + str(err.description) + ")</i>", 'HTML')
-        return True
-    except ValueError:
-        pass
-    return False
+        await bot.send_message(msg.chat.id, "<b>Этому человеку невозможно написать через Козловского.</b>"
+                                            f"<i>({err.description})</i>")
 
 
-def transfer_to_other(msg: Message):
-    try:
-        for other_index in range(len(chat_id_pen)):
-            if chat_id_pen[other_index] != str(msg.chat.id):  # собеседники
-                continue
-            if msg.chat.type != "private":
-                if str(msg.from_user.id) not in current_users[other_index]:
-                    current_users[other_index] = str(msg.from_user.id)
-                    bot.send_message(chat_id_my[other_index], "<b>" + str(msg.from_user.first_name) + " <pre>" +
-                                     str(msg.from_user.id) + "</pre></b>", 'HTML')
-            reply = None
-            try:
-                reply = chat_msg_my[other_index][chat_msg_pen[other_index].index(msg.reply_to_message.message_id)]
-            except AttributeError:
-                pass
-            chat_msg_my[other_index].append(
-                bot.copy_message(chat_id_my[other_index], msg.chat.id, msg.id, reply_to_message_id=reply).message_id)
-            chat_msg_pen[other_index].append(msg.id)
-            save()
-    except ValueError:
-        pass
+async def transfer_to_initiator(msg: Message):
+    initiator_chats = await BotDB.fetchall(
+        "SELECT initiator, `current_user` FROM chats WHERE target = %s", msg.chat.id)
+
+    for initiator_id, current_user in initiator_chats:
+        if msg.chat.type != "private":
+            if current_user != msg.from_user.id:
+                await bot.send_message(initiator_id, f"<b>{user_link(msg.from_user, True)}</b>")
+                await BotDB.execute("UPDATE chats SET `current_user` = %s WHERE initiator = %s",
+                                    (msg.from_user.id, initiator_id))
+
+        reply = None
+        if msg.reply_to_message is not None:
+            reply = await BotDB.fetchone(
+                "SELECT initiator_msg_id FROM chat_msgs WHERE chat_id = %s AND target_msg_id = %s",
+                (initiator_id, msg.reply_to_message.id))
+
+        copied_id = (await bot.copy_message(initiator_id, msg.chat.id, msg.id, reply_to_message_id=reply)).message_id
+        await BotDB.execute("INSERT INTO chat_msgs (chat_id, initiator_msg_id, target_msg_id) VALUES (%s, %s, %s)",
+                            (initiator_id, copied_id, msg.id))
 
 
-def edit_msg_handler(msg: Message):
+async def edit_msg_handler(msg: Message):
+    await BotDB.get_state()
+
+    target_id = data['state_data']
+
+    reply = None
+    if msg.reply_to_message is not None:
+        reply = await BotDB.fetchone(
+            "SELECT target_msg_id FROM chat_msgs WHERE chat_id = %s AND initiator_msg_id = %s",
+            (msg.chat.id, msg.reply_to_message.id))
+
+    copied_id = (await bot.copy_message(target_id, msg.chat.id, msg.id, reply_to_message_id=reply)).message_id
+    await BotDB.execute("INSERT INTO chat_msgs (chat_id, initiator_msg_id, target_msg_id) VALUES (%s, %s, %s)",
+                        (msg.chat.id, msg.id, copied_id))
+
     try:
         my_index = chat_id_my.index(str(msg.chat.id))
         bot.edit_message_text(msg.text, chat_id_pen[my_index],
@@ -210,26 +228,21 @@ def edit_msg_handler(msg: Message):
         pass
 
 
-def delete_cmd_handler(msg: Message):
+async def delete_cmd_handler(msg: Message):
     try:
         reply = msg.reply_to_message.message_id
         my_index = chat_id_my.index(str(msg.chat.id))
-        bot.delete_message(chat_id_pen[my_index], chat_msg_pen[my_index][chat_msg_my[my_index].index(reply)])
-        bot.send_message(msg.chat.id, "<i>Сообщение удалено.</i>", 'HTML')
+        await bot.delete_message(chat_id_pen[my_index], chat_msg_pen[my_index][chat_msg_my[my_index].index(reply)])
+        await bot.send_message(msg.chat.id, "<i>Сообщение удалено.</i>")
     except AttributeError:
-        bot.send_message(msg.chat.id, "Ответьте командой /delete на сообщение, которое требуется удалить.")
+        await bot.send_message(msg.chat.id, "Ответьте командой /delete на сообщение, которое требуется удалить.")
     except ApiTelegramException:
-        bot.send_message(msg.chat.id, "<i>Не удалось удалить сообщение.</i>", 'HTML')
+        await bot.send_message(msg.chat.id, "<i>Не удалось удалить сообщение.</i>")
     except ValueError:
         pass
 
 
-def end_chat(chat_id):
-    my_index = chat_id_my.index(chat_id)
-    chat_id_my.pop(my_index)
-    chat_id_pen.pop(my_index)
-    chat_msg_my.pop(my_index)
-    chat_msg_pen.pop(my_index)
-    current_users.pop(my_index)
-    bot.send_message(chat_id, "Конец переписки")
-    save()
+async def end_chat(msg: Message):
+    await BotDB.execute("DELETE FROM chats WHERE initiator = %s", msg.chat.id)
+    await BotDB.set_state(msg.chat.id, -1)
+    await bot.send_message(msg.chat.id, "Конец переписки", reply_markup=ReplyKeyboardRemove())
