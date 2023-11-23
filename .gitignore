@@ -7,3 +7,4 @@ ffmpeg.exe
 ffmpeg
 db.json
 website/p/*
+!website/p/.gitignore

@@ -10,4 +10,3 @@ aiomysql
 aiohttp
 cryptography
 chess
-PyOgg @ git+https://github.com/TeamPyOgg/PyOgg

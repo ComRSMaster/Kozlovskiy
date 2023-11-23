@@ -19,14 +19,14 @@ from helpers.user_states import States
 def init_simple_commands():
     @bot.message_handler(['start'])
     async def command_start(msg: Message, data):
-        reply = msg.chat.type != 'private'
         start_msg = "О чём поговорим?🤔"
         if data['new_user']:
             start_msg = "Чем я могу помочь?🤔"
         else:
-            await bot.send_message(msg.chat.id, start_msg, reply_markup=gen_init_markup(reply or None, 0))
+            await bot.send_message(msg.chat.id, start_msg, reply_markup=gen_init_markup(
+                None if msg.chat.type == 'private' else False, 0))
         await BotDB.set_state(msg.chat.id, States.AI_TALK,
-                              {'reply': reply, 'model': 0, 'messages': [
+                              {'reply': False, 'model': 0, 'messages': [
                                   {"role": "user",
                                    "content": "Привет"},
                                   {"role": "assistant",

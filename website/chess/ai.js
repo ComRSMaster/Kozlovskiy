@@ -1,4 +1,4 @@
-importScripts('lib/chess.js')
+importScripts('lib/chess.min.js')
 
 var game = new Chess();
 

@@ -1,9 +1,10 @@
 from asyncio import ensure_future
 
-from telebot.apihelper import ApiTelegramException
 from telebot.asyncio_filters import TextFilter
+from telebot.asyncio_handler_backends import ContinueHandling
+from telebot.asyncio_helper import ApiTelegramException
 from telebot.types import Chat, Message, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, \
-    InputMediaPhoto, PhotoSize, CallbackQuery, ReplyKeyboardRemove
+    InputMediaPhoto, CallbackQuery, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from telebot.util import quick_markup, chunks, content_type_media, extract_arguments
 
 from helpers.bot import bot
@@ -14,10 +15,11 @@ from helpers.user_states import States
 from helpers.utils import n, user_link
 
 
-def register_chat_handlers():
+def register_chat_handler():
     bot.register_message_handler(chat_cmd_handler, commands=['chat'])
     bot.register_message_handler(delete_cmd_handler, commands=['delete'])
     bot.register_message_handler(end_chat, state=States.CHATTING, commands=['cancel'])
+    bot.register_message_handler(getting_id, state=States.GETTING_ID, content_types=content_type_media)
     bot.register_message_handler(transfer_to_target, state=States.CHATTING, content_types=content_type_media)
 
     bot.register_callback_query_handler(profile_photo_button, None, text=TextFilter(starts_with='btn_photo'))
@@ -200,39 +202,43 @@ async def transfer_to_initiator(msg: Message):
 
 
 async def edit_msg_handler(msg: Message):
-    await BotDB.get_state()
+    state, target_id = await BotDB.get_state(msg.chat.id)
+    initiator_chats = await BotDB.fetchall(
+        "SELECT initiator, `current_user` FROM chats WHERE target = %s", msg.chat.id)
 
-    target_id = data['state_data']
-
-    reply = None
-    if msg.reply_to_message is not None:
-        reply = await BotDB.fetchone(
+    if state == States.CHATTING:
+        target_msg_id = await BotDB.fetchone(
             "SELECT target_msg_id FROM chat_msgs WHERE chat_id = %s AND initiator_msg_id = %s",
-            (msg.chat.id, msg.reply_to_message.id))
+            (msg.chat.id, msg.id))
+        await bot.edit_message_text(msg.text, target_id, target_msg_id)
 
-    copied_id = (await bot.copy_message(target_id, msg.chat.id, msg.id, reply_to_message_id=reply)).message_id
-    await BotDB.execute("INSERT INTO chat_msgs (chat_id, initiator_msg_id, target_msg_id) VALUES (%s, %s, %s)",
-                        (msg.chat.id, msg.id, copied_id))
-
-    try:
-        my_index = chat_id_my.index(str(msg.chat.id))
-        bot.edit_message_text(msg.text, chat_id_pen[my_index],
-                              chat_msg_pen[my_index][chat_msg_my[my_index].index(msg.id)])
-    except ValueError:
-        pass
-    try:
-        other_index = chat_id_pen.index(str(msg.chat.id))
-        bot.edit_message_text(msg.text, chat_id_my[other_index],
-                              chat_msg_my[other_index][chat_msg_pen[other_index].index(msg.id)])
-    except ValueError:
-        pass
+    for initiator_id, current_user in initiator_chats:
+        initiator_msg_id = await BotDB.fetchone(
+            "SELECT initiator_msg_id FROM chat_msgs WHERE chat_id = %s AND target_msg_id = %s",
+            (initiator_id, msg.id))
+        await bot.edit_message_text(msg.text, initiator_id, initiator_msg_id)
 
 
 async def delete_cmd_handler(msg: Message):
     try:
-        reply = msg.reply_to_message.message_id
-        my_index = chat_id_my.index(str(msg.chat.id))
-        await bot.delete_message(chat_id_pen[my_index], chat_msg_pen[my_index][chat_msg_my[my_index].index(reply)])
+        reply = msg.reply_to_message.id
+
+        state, target_id = await BotDB.get_state(msg.chat.id)
+        initiator_chats = await BotDB.fetchall(
+            "SELECT initiator, `current_user` FROM chats WHERE target = %s", msg.chat.id)
+
+        if state == States.CHATTING:
+            target_msg_id = await BotDB.fetchone(
+                "SELECT target_msg_id FROM chat_msgs WHERE chat_id = %s AND initiator_msg_id = %s",
+                (msg.chat.id, reply))
+            await bot.delete_message(target_id, target_msg_id)
+
+        for initiator_id, current_user in initiator_chats:
+            initiator_msg_id = await BotDB.fetchone(
+                "SELECT initiator_msg_id FROM chat_msgs WHERE chat_id = %s AND target_msg_id = %s",
+                (initiator_id, reply))
+            await bot.delete_message(initiator_id, initiator_msg_id)
+
         await bot.send_message(msg.chat.id, "<i>Сообщение удалено.</i>")
     except AttributeError:
         await bot.send_message(msg.chat.id, "Ответьте командой /delete на сообщение, которое требуется удалить.")
@@ -246,3 +252,23 @@ async def end_chat(msg: Message):
     await BotDB.execute("DELETE FROM chats WHERE initiator = %s", msg.chat.id)
     await BotDB.set_state(msg.chat.id, -1)
     await bot.send_message(msg.chat.id, "Конец переписки", reply_markup=ReplyKeyboardRemove())
+
+
+async def getting_id(msg: Message):
+    markup = InlineKeyboardMarkup()
+    if msg.content_type == 'contact':
+        chat_id = msg.contact.user_id
+        if not chat_id:
+            await bot.send_message(msg.chat.id, "Этого человека нет в Telegram")
+        else:
+            markup.add(InlineKeyboardButton(text="Начать чат", callback_data=f"btn_chat_{chat_id}"))
+            await bot.send_message(msg.chat.id, chat_id, reply_markup=markup)
+    elif msg.forward_from is not None:
+        chat_id = msg.forward_from.id
+        markup.add(InlineKeyboardButton(text="Начать чат", callback_data=f"btn_chat_{chat_id}"))
+        await bot.send_message(msg.chat.id, chat_id, reply_markup=markup)
+
+    if msg.text == '/cancel':
+        ContinueHandling()
+    else:
+        await BotDB.set_state(msg.chat.id, -1)

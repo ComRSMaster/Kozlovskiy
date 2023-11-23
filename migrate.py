@@ -38,7 +38,7 @@ CREATE TABLE `users`
 (
     `id`          BIGINT   NOT NULL,
     `name`        TINYTEXT NOT NULL,
-    `desc`        TINYTEXT NULL,
+    `desc`        VARCHAR(255) NULL,
     `photo_id`    TINYTEXT NULL,
     `is_private`  TINYINT  NOT NULL,
     `coord`       POINT NULL,
@@ -56,10 +56,11 @@ CREATE TABLE `users`
 
 CREATE TABLE `books`
 (
-    `grades`     CHAR(10) NOT NULL,
-    `subject`    TINYTEXT NOT NULL,
-    `name`       TINYTEXT NOT NULL,
-    `author`     TINYTEXT NOT NULL,
+    `grade`      TINYINT      NOT NULL,
+    `subject`    TINYTEXT     NOT NULL,
+    `name`       TINYTEXT     NOT NULL,
+    `author`     TINYTEXT     NOT NULL,
+    `time`       INT UNSIGNED NOT NULL,
     `data_doc`   JSON NULL,
     `data_photo` JSON NULL,
     `data_url`   VARCHAR(500) NULL
@@ -120,9 +121,9 @@ create table chat_msgs
         for subject in abstracts[grade]:
             for b in abstracts[grade][subject]:
                 await cur.execute(
-                    "INSERT INTO `books` (`grade`, `subject`, `name`, `author`, `data_doc`, `data_photo`, `data_url`) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s);",
-                    (grade, subject, b['n'], b['a'],
+                    "INSERT INTO `books` (`grade`, `subject`, `name`, `author`, `time`, `data_doc`, `data_photo`, `data_url`) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
+                    (grade, subject, b['n'], b['a'], b['t'],
                      ujson.dumps(b['id']['d']), ujson.dumps(b['id']['p']), b['id']['u']))
     for uid in users:
         u = users[uid]
@@ -132,8 +133,12 @@ create table chat_msgs
         else:
             day = month = None
         if 'talk' in u:
-            state = 1
-            state_data = ujson.dumps(u['talk'])
+            state = 2
+            data = {'reply': False, 'model': 0, 'messages': [{
+                "role": "user" if index % 2 == 0 else "assistant",
+                "content": msg
+            } for index, msg in enumerate(u['talk'])]}
+            state_data = ujson.dumps(data, ensure_ascii=False)
         else:
             state = -1
             state_data = None
@@ -145,9 +150,9 @@ create table chat_msgs
             "VALUES (%s, %s, %s, %s, %s, Point(%s, %s), %s, %s, %s, %s, %s, %s);",
             (int(uid), u['name'], u['desc'], u['photo_id'], u['private'], u.get('lat'), u.get('lon'),
              day, month, u['balance'], uid not in ignore, state, state_data))
-    for orig in images:
-        await cur.execute(
-            "INSERT INTO `images` (orig_id, resent_id) VALUES (%s, %s);", (orig, images[orig]))
+    # for orig in images:
+    #     await cur.execute(
+    #         "INSERT INTO `images` (orig_id, resent_id) VALUES (%s, %s);", (orig, images[orig]))
 
     await conn.commit()
 

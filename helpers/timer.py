@@ -25,7 +25,10 @@ async def timer_step():
             await update_user_info(await bot.get_chat(chat_id))
         except ApiTelegramException as e:
             if 'chat not found' in e.description:
-                await delete_chat(chat_id)
+                pass
+            else:
+                raise e
+                # await delete_chat(chat_id)
 
         if birth_day is None:
             continue
@@ -50,7 +53,7 @@ async def timer_step():
 
             await BotDB.execute("UPDATE `users` SET `is_greeted` = 1 WHERE `id` = %s", chat_id)
             await bot.send_message(admin_chat, f"Я поздравил с ДР: {chat_id}")
-        else:
+        elif is_greeted:
             await BotDB.execute("UPDATE `users` SET `is_greeted` = DEFAULT WHERE `id` = %s", chat_id)
 
 

@@ -1,8 +1,13 @@
 /*! lite version of chessboard.js v1.0.0 | (c) 2019 Chris Oakman | MIT License chessboardjs.com/license */
 
 #board {
-    touch-action: none;
     user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+
+    touch-action: none;
     aspect-ratio: 1;
     background-image: url("../board.svg");
     position: relative;

@@ -1,3 +1,4 @@
+import os
 import time
 import uuid
 
@@ -6,6 +7,7 @@ import ujson
 from telebot.async_telebot import logger
 
 from helpers.session_manager import auto_close
+import ssl
 
 SYSTEM_PROMPT = {"role": "system",
                  "content": '''Ты - российский актёр Даня Козловский.
@@ -20,7 +22,7 @@ def error_handler(status_code, error_text):
         logger.error("Токен ChatGPT не работает")
         return "На данный момент ChatGPT недоступен. Попробуйте позже."
 
-    error = f"Код ошибки: {status_code}\n{error_text}"
+    error = f"Код ошибки: {status_code}\n```\n{error_text[4000:]}\n```"
     logger.error(error)
     return error
 
@@ -73,10 +75,14 @@ class ChatGPT:
 
 class GigaChat:
     def __init__(self, gigachat_secret):
+        ssl_ctx = ssl.create_default_context(
+            cafile=os.path.dirname(__file__) + '/gigachat_crt/russian_trusted_root_ca_pem.crt')
+        conn = aiohttp.TCPConnector(ssl_context=ssl_ctx)
+
         self.token_expires_at = 0
         self.access_token: str = ''
 
-        self.session = auto_close(aiohttp.ClientSession(json_serialize=ujson.dumps))
+        self.session = auto_close(aiohttp.ClientSession(json_serialize=ujson.dumps, connector=conn))
         self.gigachat_secret = gigachat_secret
 
     async def chat(self, messages, cooldown=0):

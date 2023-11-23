@@ -208,7 +208,7 @@ let init_mp = opponent => {
     is_inited = true;
     gameStatus.innerText = 'Подключение'
     mpLoading.hidden = false
-    import('./multiplayer.js').then(obj =>
+    import('./multiplayer.min.js').then(obj =>
         ai = obj.Multiplayer(msg_handler, init, opponent))
 }
 

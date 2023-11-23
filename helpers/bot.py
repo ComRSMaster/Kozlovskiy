@@ -1,3 +1,4 @@
+from asyncio import ensure_future
 from io import StringIO
 
 from telebot import asyncio_helper
@@ -15,14 +16,13 @@ class ExcHandler(ExceptionHandler):
 
     def handle(self, exception):
         logger.error(exception, exc_info=True)
-        bot.send_message(admin_chat, f"ОШИБКА:\n{self.log_stream.getvalue()}"[:4096], '')
+        ensure_future(bot.send_message(admin_chat, f"ОШИБКА:\n{self.log_stream.getvalue()}"[:4096], ''))
         self.log_stream.seek(0)
         self.log_stream.truncate(0)
 
 
 if is_dev:
     logger.setLevel(10)
-
 
 bot = AsyncTeleBot(bot_token, 'HTML',
                    exception_handler=None if is_dev else ExcHandler(), allow_sending_without_reply=True)

@@ -161,7 +161,7 @@ let loadChessJS = () => {
     return new Promise(resolve => {
         const scriptEle = document.createElement("script");
         scriptEle.async = true;
-        scriptEle.src = './lib/chess.js';
+        scriptEle.src = './lib/chess.min.js';
 
         scriptEle.onload = () => resolve();
 

@@ -20,7 +20,7 @@ RE_EMOJI = re.compile("["
 
 assemblyai_session = auto_close(
     aiohttp.ClientSession('https://api.assemblyai.com', json_serialize=ujson.dumps))
-tts_session = auto_close(aiohttp.ClientSession('https://api.voicerss.org'))
+# tts_session = auto_close(aiohttp.ClientSession('https://api.voicerss.org'))
 
 
 def register_voice_msg_handler():

@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 
 import aiomysql
 import ujson
+# noinspection PyPackageRequirements
+from pymysql.err import OperationalError
 
 from helpers.config import mysql_server, mysql_password, mysql_user
 
@@ -31,18 +33,22 @@ class _BotDB:
             await conn_cm.__aexit__(None, None, None)
             await cur_cm.__aexit__(None, None, None)
 
-    async def execute(self, query, args=None, fetch=0):
+    async def execute(self, query, args=None, fetch=0, trycount=5):
         print(query, args)
-        async with self.cursor() as cur:
-            cur: aiomysql.Cursor
-            await cur.execute(query, args)
+        try:
+            async with self.cursor() as cur:
+                cur: aiomysql.Cursor
+                await cur.execute(query, args)
 
-            if fetch == 1:
-                return await cur.fetchone()
-            if fetch == 2:
-                return await cur.fetchall()
-            if fetch == 3:
-                return cur.lastrowid
+                if fetch == 1:
+                    return await cur.fetchone()
+                if fetch == 2:
+                    return await cur.fetchall()
+                if fetch == 3:
+                    return cur.lastrowid
+        except OperationalError:
+            if trycount > 0:
+                return await self.execute(query, args, fetch, trycount-1)
 
     async def fetchone(self, query, args=None):
         return await self.execute(query, args, 1)
@@ -60,7 +66,7 @@ class _BotDB:
 
     async def set_state(self, chat_id, state: int, data=None):
         if data is not None:
-            data = ujson.dumps(data)
+            data = ujson.dumps(data, ensure_ascii=False)
         await self.execute("UPDATE `users` SET `state` = %s, `state_data` = %s WHERE `id` = %s;",
                            (state, data, chat_id))
 
@@ -74,7 +80,7 @@ class _BotDB:
 
     async def set_state_safe(self, chat_id, state: int, data=None, allow_empty_state=False):
         if data is not None:
-            data = ujson.dumps(data)
+            data = ujson.dumps(data, ensure_ascii=False)
         await self.execute(f"UPDATE `users` SET  `state_data` = %s WHERE `id` = %s AND `state` = %s "
                            f"{' OR `state` = -1' if allow_empty_state else ''};",
                            (data, chat_id, state))

@@ -22,7 +22,7 @@ class ChessGame:
 
 ws: dict[int, WebSocket] = {}
 games: dict[int, ChessGame] = {}
-chess_url = 'https://t.me/KozloTest_bot/chess'
+chess_url = 'https://t.me/K0zl0Test0Kyst0Bot/chess_kozloTestoKystoBot'
 
 
 @bot.message_handler(['chess'])
