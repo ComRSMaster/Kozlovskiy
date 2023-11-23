@@ -1,4 +1,3 @@
-#!/usr/bin/python3
 import ujson
 from starlette.applications import Starlette
 from starlette.responses import Response
@@ -119,6 +118,7 @@ routes = [
 app = Starlette(routes=routes, on_startup=[startup], on_shutdown=[shutdown])
 
 # Запуск бота
-BotDB.loop.create_task(bot.infinity_polling(skip_pending=config.is_dev))
+if is_dev:
+    BotDB.loop.create_task(bot.infinity_polling(skip_pending=True))
 
 BotDB.loop.create_task(timer())
