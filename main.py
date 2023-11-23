@@ -121,4 +121,4 @@ app = Starlette(routes=routes, on_startup=[startup], on_shutdown=[shutdown])
 # Запуск бота
 BotDB.loop.create_task(bot.infinity_polling(skip_pending=config.is_dev))
 
-# BotDB.loop.create_task(timer())
+BotDB.loop.create_task(timer())
