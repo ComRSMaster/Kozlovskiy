@@ -259,7 +259,7 @@ if (!start_param) { // play with bot
                 let statusStr = white_turn && u[1] || !white_turn && !u[1] ?
                     "Ваш ход" : "Ожидание соперника";
 
-                myGames.appendChild(make_game_name(u[4] ? `../p/${u[4]}.jpg` : null, u[3], statusStr, () => {
+                myGames.appendChild(make_game_name(u[4] ? `url(../p/${u[4]}.jpg)` : null, u[3], statusStr, () => {
                     init_mp(u[2])
                     closeModal()
                 }))
