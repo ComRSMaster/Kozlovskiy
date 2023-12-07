@@ -54,11 +54,11 @@ async def chess_mp_endpoint(websocket: WebSocket):
     my_name = (data['user']['first_name'] + ' ' + data['user']['last_name']).rstrip()
 
     chess_data = await BotDB.fetchone(
-        "SELECT `id`, `fen`, `player_white`, `player_black`, `status` FROM `chess`"
-        "WHERE (`player_black` = %(mid)s AND `player_white` = %(oid)s) OR"
-        "(`player_white` = %(mid)s AND `player_black` = %(oid)s);"
-        "INSERT INTO `users` (`id`, `name`, `is_private`, `only_chess`) VALUES (%(mid)s, %(name)s, 1, 1) AS new "
-        "ON DUPLICATE KEY UPDATE `name` = new.`name`",
+        "SELECT `id`, `fen`, `player_white`, `player_black`, `status` FROM `chess` "
+        "WHERE (`player_black` = %(mid)s AND `player_white` = %(oid)s) OR "
+        "(`player_white` = %(mid)s AND `player_black` = %(oid)s); "
+        "INSERT INTO `users` (`id`, `name`, `is_private`, `only_chess`) VALUES (%(mid)s, %(name)s, 1, 1) "
+        "ON DUPLICATE KEY UPDATE `name` = VALUES(`name`)",
         {'name': my_name, 'mid': mid, 'oid': oid})
     opp_user = await BotDB.fetchone("SELECT `name`, `photo_id` FROM `users` WHERE `id` = %s", oid)
 
