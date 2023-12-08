@@ -134,7 +134,7 @@ create table chat_msgs
             day = month = None
         if 'talk' in u:
             state = 2
-            data = {'reply': False, 'model': 0, 'messages': [{
+            data = {'reply': False, 'model': 1, 'messages': [{
                 "role": "user" if index % 2 == 0 else "assistant",
                 "content": msg
             } for index, msg in enumerate(u['talk'])]}

@@ -45,7 +45,7 @@ async def timer_step():
             ]
             if state == -1:
                 await BotDB.set_state(chat_id, States.AI_TALK,
-                                      {'reply': False, 'model': 0, 'messages': birthday_dialog})
+                                      {'reply': False, 'model': 1, 'messages': birthday_dialog})
             elif state == States.AI_TALK:
                 _, data = await BotDB.get_state(chat_id)
                 data['messages'].extend(birthday_dialog)

@@ -26,7 +26,7 @@ def init_simple_commands():
             await bot.send_message(msg.chat.id, start_msg, reply_markup=gen_init_markup(
                 None if msg.chat.type == 'private' else False, 0))
         await BotDB.set_state(msg.chat.id, States.AI_TALK,
-                              {'reply': False, 'model': 0, 'messages': [
+                              {'reply': False, 'model': 1, 'messages': [
                                   {"role": "user",
                                    "content": "Привет"},
                                   {"role": "assistant",
