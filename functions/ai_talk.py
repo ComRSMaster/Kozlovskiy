@@ -194,7 +194,7 @@ class AiTalk:
             ensure_future(bot.send_message(msg.chat.id, f'Текущая нейросеть: <b>{MODELS[0]}</b>',
                                            disable_notification=True,
                                            reply_markup=gen_init_markup(not is_private or None, 0)))
-            data = {'reply': False, 'model': 0, 'messages': [{
+            data = {'reply': False, 'model': 1, 'messages': [{
                 "role": "user",
                 "content": msg.text
             }]}
