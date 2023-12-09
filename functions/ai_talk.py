@@ -58,7 +58,7 @@ class AiTalk:
                     else:
                         curr_result += text
                         all_result += text
-                    def send_to_user(use_md=True):
+                    async def send_to_user(use_md=True):
                         if msg_id is None:
                             msg_id = (await bot.send_message(
                                 chat_id, curr_result, 'Markdown' if use_md else None, reply_to_message_id=reply_id,
