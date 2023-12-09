@@ -58,22 +58,24 @@ class AiTalk:
                     else:
                         curr_result += text
                         all_result += text
-
-                    try:
+                    def send_to_user(use_md=True):
                         if msg_id is None:
                             msg_id = (await bot.send_message(
-                                chat_id, curr_result, 'Markdown', reply_to_message_id=reply_id,
+                                chat_id, curr_result, 'Markdown' if use_md else None, reply_to_message_id=reply_id,
                                 reply_markup=stop_markup)).id
                             if status_task is None:
                                 status_task = loop.create_task(send_status_periodic(chat_id, 'typing'))
                         else:
                             # print(curr_result, chat_id, msg_id)
-                            await bot.edit_message_text(curr_result, chat_id, msg_id, parse_mode='Markdown',
+                            await bot.edit_message_text(curr_result, chat_id, msg_id, parse_mode='Markdown' if use_md else None,
                                                         reply_markup=stop_markup)
+
+                    try:
+                        await send_to_user()
                     except ApiTelegramException as e:
                         logger.error(e)
                         if e.description.startswith("Bad Request: can't parse entities"):
-                            pass  # TODO fix md
+                            await send_to_user(False)
                         continue
             except asyncio.CancelledError:
                 print('STOP')
@@ -191,9 +193,9 @@ class AiTalk:
             #                       {'reply': is_reply, 'mode': 'ai', 'init_id': init_id, 'conv_id': conv_id})
             # await get_ai_response(msg.text, msg.chat.id, init_id, True, conv_id)
 
-            ensure_future(bot.send_message(msg.chat.id, f'Текущая нейросеть: <b>{MODELS[0]}</b>',
+            ensure_future(bot.send_message(msg.chat.id, f'Текущая нейросеть: <b>{MODELS[1]}</b>',
                                            disable_notification=True,
-                                           reply_markup=gen_init_markup(not is_private or None, 0)))
+                                           reply_markup=gen_init_markup(not is_private or None, 1)))
             data = {'reply': False, 'model': 1, 'messages': [{
                 "role": "user",
                 "content": msg.text
