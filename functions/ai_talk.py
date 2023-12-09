@@ -204,7 +204,7 @@ class AiTalk:
 
             await BotDB.set_state(msg.chat.id, States.AI_TALK, data)
             answer = await self.get_ai_response(
-                self.chatgpt, data['messages'], msg.chat.id, None if is_private else msg.id)
+                self.gigachat, data['messages'], msg.chat.id, None if is_private else msg.id)
 
             data['messages'].append({
                 "role": "assistant",
