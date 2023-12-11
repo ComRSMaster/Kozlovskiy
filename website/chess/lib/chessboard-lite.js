@@ -259,7 +259,7 @@
         let squareSize = 16
         let files, ranks;
 
-        let circleEls = []
+        let circleEls = {}
 
         // -------------------------------------------------------------------------
         // Markup Building
@@ -323,7 +323,7 @@
 
             // remove pieces that are the same in both positions
             for (i in pos1) {
-                if (i in pos1 && pos1[i].dataset.piece !== pos2[i]) {
+                if (pos1[i].dataset.piece !== pos2[i]) {
                     sq1[i] = pos1[i].dataset.piece
                 }
                 if (i in pos2 && pos1[i].dataset.piece === pos2[i]) {
@@ -350,6 +350,10 @@
                 }
             }
 
+            for (i in sq1) { //  "clear" animations
+                trashPiece(i)
+                delete squareEls[i]
+            }
             // "add" animations
             let c = 0; // delay counter for pretty animation
             for (i in sq2) {
@@ -357,11 +361,11 @@
                 c += 10;
                 delete sq2[i]
             }
+            console.log(pos1)
+            console.log(pos2)
+            console.log(sq1)
+            console.log(sq2)
 
-            for (i in sq1) { //  "clear" animations
-                trashPiece(i)
-                delete squareEls[i]
-            }
         }
 
         // -------------------------------------------------------------------------
@@ -555,6 +559,7 @@
             checkSquare.style.transform = squareToTranslate(square)
             container.appendChild(checkSquare)
         }
+
         widget.clearCheck = () => {
             if (checkSquare !== null)
                 container.removeChild(checkSquare)
@@ -562,16 +567,20 @@
         }
 
         widget.addCircle = square => {
+            if (square in circleEls) return;
             let newCircle = document.createElement('square')
             newCircle.className = square in squareEls ? 'dest eat' : 'dest';
             newCircle.style.transform = squareToTranslate(square)
             container.appendChild(newCircle)
 
-            circleEls.push(newCircle)
+            circleEls[square] = newCircle
         }
+
         widget.clearCircles = () => {
-            while (circleEls.length !== 0)
-                container.removeChild(circleEls.pop())
+            for (let el in circleEls) {
+                container.removeChild(circleEls[el])
+            }
+            circleEls = {}
         }
 
         widget.snapbackDraggedPiece = () => {
