@@ -361,10 +361,6 @@
                 c += 10;
                 delete sq2[i]
             }
-            console.log(pos1)
-            console.log(pos2)
-            console.log(sq1)
-            console.log(sq2)
 
         }
 
