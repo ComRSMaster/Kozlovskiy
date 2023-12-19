@@ -30,7 +30,7 @@ def error_handler(status_code, error_text):
 class ChatGPT:
     def __init__(self, openai_key):
         self.session = auto_close(aiohttp.ClientSession(
-            "https://api.openai.com",
+            "https://ai.fakeopen.com",
             headers={"Authorization": f"Bearer {openai_key}"},
             json_serialize=ujson.dumps))
 
