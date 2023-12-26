@@ -31,7 +31,12 @@ class ChatGPT:
     def __init__(self, openai_key):
         self.session = auto_close(aiohttp.ClientSession(
             "https://ai.fakeopen.com",
-            headers={"Authorization": f"Bearer {openai_key}"},
+            headers={"Authorization": f"Bearer {openai_key}",
+                     "Content-Type": "application/json",
+                     "Origin": "https://chat.geekgpt.org",
+                     "Referer": "https://chat.geekgpt.org/",
+                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                     },
             json_serialize=ujson.dumps))
 
     async def chat(self, messages, cooldown=0):
@@ -149,8 +154,7 @@ async def test_chatgpt():
 
 async def test_gigachat():
     print('init')
-    gigachat = GigaChat(
-        "OGYwOTgxOTItNWYwZS00ZWJmLWJlZGUtYjVjOWMwNDY5ZTU4OjEzNzUzZGI5LTYyZGEtNDM1ZS05NTJlLWZiMGNhODdjYmVkMQ==")
+    gigachat = GigaChat("TOKEN")
 
     async for m in gigachat.chat([{
         "role": "user",

@@ -12,7 +12,7 @@ from telebot.util import content_type_media, quick_markup
 
 from functions.voice_msg import stt, get_voice_id
 from helpers.bot import bot
-from helpers.config import random_ans, calls, calls_private
+from helpers.config import random_ans, calls, calls_private, bot_token
 from helpers.db import BotDB
 from helpers.gpts.gpts_apis import ChatGPT, GigaChat
 from helpers.user_states import States
@@ -155,7 +155,7 @@ class AiTalk:
             await BotDB.set_state(msg.chat.id, States.AI_TALK, state_data)
 
         if is_reply:
-            if msg.reply_to_message is None or msg.reply_to_message.from_user.id != bot.user.id:
+            if msg.reply_to_message is None or msg.reply_to_message.from_user.id != int(bot_token.split(':')[0]):
                 return
             else:
                 reply_id = msg.id
