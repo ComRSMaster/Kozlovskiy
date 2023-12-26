@@ -121,8 +121,8 @@ async def book_inline_section(call: CallbackQuery):
                       f'{author.first_name + n(author.last_name, " ")}</a> {n(author.username, "@")}'
     except (ApiTelegramException, ValueError):
         pass
-    docs = [InputMediaDocument(d) for d in ujson.loads(data_doc)]
-    photos = [InputMediaPhoto(d) for d in ujson.loads(data_photo)]
+    docs = [InputMediaDocument(d, parse_mode='HTML') for d in ujson.loads(data_doc)]
+    photos = [InputMediaPhoto(d, parse_mode='HTML') for d in ujson.loads(data_photo)]
     caption = f'{data_url}<b>{book}\nАвтор: {author_name}\nОпубликовано: ' \
               f'{datetime.fromtimestamp(timestamp, ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M")}</b>'
     if len(docs) > 0:
