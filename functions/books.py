@@ -118,7 +118,7 @@ async def book_inline_section(call: CallbackQuery):
         await bot.answer_callback_query(call.id, '❗Пожалуйста, нажми на кнопку "Обновить 🔄️"', show_alert=True)
         return
 
-    _, _, _, _, author_name, timestamp, data_doc, data_photo, data_url = await BotDB.fetchone(
+    _, grade, subject, name, author_name, timestamp, data_doc, data_photo, data_url = await BotDB.fetchone(
         "SELECT * FROM `books` WHERE `id` = %s", book_id)
     try:
         author = await bot.get_chat(int(author_name))
@@ -128,7 +128,7 @@ async def book_inline_section(call: CallbackQuery):
         pass
     docs = [InputMediaDocument(d, parse_mode='HTML') for d in ujson.loads(data_doc)]
     photos = [InputMediaPhoto(d, parse_mode='HTML') for d in ujson.loads(data_photo)]
-    caption = f'{data_url}<b>{book}\nАвтор: {author_name}\nОпубликовано: ' \
+    caption = f'{data_url}<b>{name}\nАвтор: {author_name}\nОпубликовано: ' \
               f'{datetime.fromtimestamp(timestamp, ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M")}</b>'
     if len(docs) > 0:
         docs[-1].caption = caption
