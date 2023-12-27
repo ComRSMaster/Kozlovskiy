@@ -92,7 +92,7 @@ def init_simple_commands():
     @bot.message_handler(['broadcast'], chat_id=[admin_chat], is_reply=True)
     async def command_broadcast(msg: Message):
         # TODO test
-        for user_id in await BotDB.fetchall("SELECT `id` FROM `users` WHERE `is_private` = 1"):
+        for user_id in await BotDB.fetchall("SELECT `id` FROM `users` WHERE `is_private` = 1 AND `only_chess` = 0"):
             for _ in range(5):
                 try:
                     await bot.copy_message(user_id, msg.chat.id, msg.reply_to_message.id)
