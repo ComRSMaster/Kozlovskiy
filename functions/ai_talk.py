@@ -7,6 +7,7 @@ from typing import Union
 import ujson
 from telebot.asyncio_filters import TextFilter
 from telebot.asyncio_helper import ApiTelegramException, logger
+from telebot.formatting import escape_markdown
 from telebot.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, CallbackQuery
 from telebot.util import content_type_media, quick_markup
 
@@ -65,15 +66,15 @@ class AiTalk:
                         nonlocal msg_id, status_task
                         if msg_id is None:
                             msg_id = (await bot.send_message(
-                                chat_id, curr_result, 'Markdown' if use_md else 'Text', reply_to_message_id=reply_id,
-                                reply_markup=stop_markup)).id
+                                chat_id, curr_result if use_md else escape_markdown(curr_result), 'MarkdownV2',
+                                reply_to_message_id=reply_id, reply_markup=stop_markup)).id
                             if status_task is None:
                                 status_task = loop.create_task(send_status_periodic(chat_id, 'typing'))
                         else:
                             # print(curr_result, chat_id, msg_id)
-                            await bot.edit_message_text(curr_result, chat_id, msg_id,
-                                                        parse_mode='Markdown' if use_md else 'Text',
-                                                        reply_markup=stop_markup)
+                            await bot.edit_message_text(
+                                curr_result if use_md else escape_markdown(curr_result), chat_id,
+                                msg_id, parse_mode='MarkdownV2' if use_md else None, reply_markup=stop_markup)
 
                     try:
                         await send_to_user()
@@ -251,7 +252,6 @@ async def get_user_message(msg: Message, voice_id):
         return await stt(voice_id, False)
     if msg.caption is not None:
         return msg.caption
-
 
 # def append_to_talk(chat_id: int, user_msg: str, ai_msg: str):
 #     data = ujson.loads(msg.state_data)
