@@ -93,7 +93,7 @@ async def subject_inline_section(call: CallbackQuery):
     subject = call.data[fs + 1:]
     grade = call.data[call.data[:fs].rfind("_") + 1:fs]
 
-    books = await BotDB.fetchall("SELECT `name` FROM `books` WHERE `grade` = %s AND `subject` = %s",
+    books = await BotDB.fetchall("SELECT `id`, `name` FROM `books` WHERE `grade` = %s AND `subject` = %s",
                                  (grade, subject))
 
     markup = InlineKeyboardMarkup(row_width=1).add(
@@ -101,7 +101,7 @@ async def subject_inline_section(call: CallbackQuery):
         InlineKeyboardButton("Обновить 🔄️", callback_data=f'btn_subject_{grade}_{subject}'),
         # InlineKeyboardButton("Выложить 🔼", callback_data=f'btn_upload_{grade}_{subject}'),
         row_width=2).add(
-        *[InlineKeyboardButton(name[0], callback_data=f'btn_book_{grade}_{subject}_{name[0]}') for name in books])
+        *[InlineKeyboardButton(name, callback_data=f'btn_book_{book_id}') for book_id, name in books])
     try:
         await bot.edit_message_text(
             f"<b>📕Конспекты и готовые билеты📙</b>\n\n<b>🎓 Класс:</b> {grade}\n<b>📗 {subject}</b>\n\n"
@@ -112,9 +112,14 @@ async def subject_inline_section(call: CallbackQuery):
 
 
 async def book_inline_section(call: CallbackQuery):
-    _, _, grade, subject, book = call.data.split("_")
+    try:
+        _, _, book_id = call.data.split("_")
+    except ValueError:
+        await bot.answer_callback_query(call.id, '❗Пожалуйста, нажми на кнопку "Обновить 🔄️"', show_alert=True)
+        return
+
     _, _, _, _, author_name, timestamp, data_doc, data_photo, data_url = await BotDB.fetchone(
-        "SELECT * FROM `books` WHERE `grade` = %s AND `subject` = %s AND `name` = %s", (grade, subject, book))
+        "SELECT * FROM `books` WHERE `id` = %s", book_id)
     try:
         author = await bot.get_chat(int(author_name))
         author_name = f'<a href="tg://user?id={author_name}">' \
