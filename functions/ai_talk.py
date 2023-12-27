@@ -50,7 +50,7 @@ class AiTalk:
             curr_result = ''
 
             try:
-                async for text in provider.chat(messages, cooldown=20):  # 20 токенов за сообщение
+                async for text in provider.chat(messages, cooldown=35):  # 35 токенов за сообщение
                     # print(text)
                     if len(curr_result + text) > 4096:
                         # await bot.edit_message_reply_markup(chat_id, msg_id)
