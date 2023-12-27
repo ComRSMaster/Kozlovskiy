@@ -113,7 +113,7 @@ async def subject_inline_section(call: CallbackQuery):
 
 async def book_inline_section(call: CallbackQuery):
     _, _, grade, subject, book = call.data.split("_")
-    _, _, _, author_name, timestamp, data_doc, data_photo, data_url = await BotDB.fetchone(
+    _, _, _, _, author_name, timestamp, data_doc, data_photo, data_url = await BotDB.fetchone(
         "SELECT * FROM `books` WHERE `grade` = %s AND `subject` = %s AND `name` = %s", (grade, subject, book))
     try:
         author = await bot.get_chat(int(author_name))
