@@ -73,12 +73,12 @@ def init_simple_commands():
         # noinspection PyProtectedMember
         os._exit(0)
 
-    @bot.message_handler(['eval'], chat_id=[admin_chat])
-    async def command_eval(msg: Message):
+    @bot.message_handler(['exec'], chat_id=[admin_chat])
+    async def command_exec(msg: Message):
         code_out = StringIO()
         sys.stdout = code_out
         try:
-            await eval(msg.text[6:])
+            await exec(msg.text[6:])
         except Exception as e:
             await bot.send_message(msg.chat.id, f"ОШИБКА: {e}"[:4096], '')
             return
