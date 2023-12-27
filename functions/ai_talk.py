@@ -64,14 +64,14 @@ class AiTalk:
                         nonlocal msg_id, status_task
                         if msg_id is None:
                             msg_id = (await bot.send_message(
-                                chat_id, curr_result, 'Markdown' if use_md else None, reply_to_message_id=reply_id,
+                                chat_id, curr_result, 'Markdown' if use_md else 'Text', reply_to_message_id=reply_id,
                                 reply_markup=stop_markup)).id
                             if status_task is None:
                                 status_task = loop.create_task(send_status_periodic(chat_id, 'typing'))
                         else:
                             # print(curr_result, chat_id, msg_id)
                             await bot.edit_message_text(curr_result, chat_id, msg_id,
-                                                        parse_mode='Markdown' if use_md else None,
+                                                        parse_mode='Markdown' if use_md else 'Text',
                                                         reply_markup=stop_markup)
 
                     try:
