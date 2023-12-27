@@ -52,15 +52,15 @@ register_books_handler()
 register_casino_handler()
 register_chat_handler()
 
-ai_talk_inst = AiTalk(chatgpt, gigachat)
-
-bot.register_message_handler(ai_talk_inst.start_ai_talk_listener)
-
 
 @bot.message_handler(['cancel'], state='*')
 async def command_cancel(msg: Message):
     await bot.send_message(msg.chat.id, "<b>Всё отменяю</b>", reply_markup=ReplyKeyboardRemove())
     await BotDB.set_state(msg.chat.id, -1)
+
+
+ai_talk_inst = AiTalk(chatgpt, gigachat)
+bot.register_message_handler(ai_talk_inst.start_ai_talk_listener)
 
 
 @bot.message_handler(content_types=content_type_media)
