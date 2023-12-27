@@ -78,8 +78,7 @@ class AiTalk:
                         await send_to_user()
                     except ApiTelegramException as e:
                         logger.error(e)
-                        if e.description.startswith("Bad Request: can't parse entities"):
-                            await send_to_user(False)
+                        await send_to_user(False)
                         continue
             except asyncio.CancelledError:
                 print('STOP')
