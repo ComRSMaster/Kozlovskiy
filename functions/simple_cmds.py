@@ -78,7 +78,7 @@ def init_simple_commands():
         code_out = StringIO()
         sys.stdout = code_out
         try:
-            await exec(msg.text[6:])
+            exec(msg.text[6:])
         except Exception as e:
             await bot.send_message(msg.chat.id, f"ОШИБКА: {e}"[:4096], '')
             return
