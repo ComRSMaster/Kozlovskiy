@@ -15,6 +15,7 @@ from functions.chess import chess_mp_endpoint, get_chess_games
 from functions.photo_desc import register_photo_desc_handler
 from functions.simple_cmds import init_simple_commands
 from functions.voice_msg import register_voice_msg_handler
+from functions.casino import register_casino_handler
 from functions.weather import register_weather_handler
 from helpers import config, session_manager
 from helpers.bot import bot
@@ -48,6 +49,7 @@ register_voice_msg_handler()
 register_photo_desc_handler()
 register_ai_upscale_handler()
 register_books_handler()
+register_casino_handler()
 register_chat_handler()
 
 ai_talk_inst = AiTalk(chatgpt, gigachat)
