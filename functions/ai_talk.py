@@ -33,7 +33,9 @@ class AiTalk:
         self.chatgpt = chatgpt
         self.gigachat = gigachat
         self.generating_tasks: dict[str, Task] = {}
+        bot.register_message_handler(command_cancel, commands=['cancel'], state=States.AI_TALK)
         bot.register_message_handler(self.ai_talk_handler, state=States.AI_TALK, content_types=content_type_media)
+        bot.register_callback_query_handler(self.inline_btn_stop, None, text=TextFilter(starts_with='ai_stop'))
         bot.register_callback_query_handler(self.inline_btn_stop, None, text=TextFilter(starts_with='ai_stop'))
 
     async def get_ai_response(self, provider: Union[ChatGPT, GigaChat], messages: list, chat_id: int,
@@ -250,6 +252,11 @@ async def get_user_message(msg: Message, voice_id):
         return await stt(voice_id, False)
     if msg.caption is not None:
         return msg.caption
+
+async def command_cancel(msg: Message):
+    await bot.send_message(msg.chat.id, "Пока👋", reply_markup=ReplyKeyboardRemove())
+    await BotDB.set_state(msg.chat.id, -1)
+
 
 # def append_to_talk(chat_id: int, user_msg: str, ai_msg: str):
 #     data = ujson.loads(msg.state_data)
