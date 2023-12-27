@@ -90,10 +90,10 @@ async def image_upscale(chat_id, file_id, scale, face_enhance):
             try:
                 async with session.head(response['output']) as size_resp:
                     if size_resp.content_length / 1024 / 1024 >= 20:  # if file size > 20mb
-                        raise ApiTelegramException
+                        raise ValueError()
 
                 await bot.send_document(chat_id, response['output'], caption=caption)
-            except ApiTelegramException:
+            except (ApiTelegramException, ValueError):
                 await bot.send_message(chat_id, response['output'] + '\n\n' + caption)
 
         elif response['status'] == "canceled":
