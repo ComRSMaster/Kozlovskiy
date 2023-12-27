@@ -9,6 +9,12 @@ from helpers.db import BotDB
 from helpers.user_states import States
 
 
+def register_casino_handler():
+    bot.register_message_handler(casino_cmd_handler, commands=['casino'])
+    bot.register_message_handler(casino_handler, state=States.CASINO, content_types=['dice', 'text'])
+    bot.register_message_handler(casino_balance_handler, state=States.BALANCE)
+
+
 def get_main_keyboard(balance):
     return ReplyKeyboardMarkup(True).row(
         '🎲', '🎯', '🎳', '🏀', '⚽', '🎰').row(
@@ -25,7 +31,6 @@ def calc_win_coefficient(emoji):
         return 64
 
 
-@bot.message_handler(['casino'])
 async def casino_cmd_handler(msg: Message):
     balance = await BotDB.get_balance(msg.chat.id)
     print(balance)
@@ -49,7 +54,6 @@ async def casino_cmd_handler(msg: Message):
                            reply_markup=get_main_keyboard(balance))
 
 
-@bot.message_handler(state=States.CASINO, content_types=['dice', 'text'])
 async def casino_handler(msg: Message, data):
     balance = await BotDB.get_balance(msg.chat.id)
     bet = ujson.loads(data['state_data'])
@@ -108,7 +112,6 @@ async def casino_handler(msg: Message, data):
     await BotDB.execute("UPDATE `users` SET `balance` = %s WHERE `id` = %s;", (balance, msg.chat.id))
 
 
-@bot.message_handler(state=States.BALANCE)
 async def casino_balance_handler(msg: Message):
     balance = await BotDB.get_balance(msg.chat.id)
 
