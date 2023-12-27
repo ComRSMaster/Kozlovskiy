@@ -56,6 +56,7 @@ CREATE TABLE `users`
 
 CREATE TABLE `books`
 (
+    `id`         INT          NOT NULL AUTO_INCREMENT,
     `grade`      TINYINT      NOT NULL,
     `subject`    TINYTEXT     NOT NULL,
     `name`       TINYTEXT     NOT NULL,
