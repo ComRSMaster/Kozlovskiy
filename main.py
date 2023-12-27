@@ -49,7 +49,6 @@ register_voice_msg_handler()
 register_photo_desc_handler()
 register_ai_upscale_handler()
 register_books_handler()
-register_casino_handler()
 register_chat_handler()
 
 
@@ -59,6 +58,7 @@ async def command_cancel(msg: Message):
     await BotDB.set_state(msg.chat.id, -1)
 
 
+register_casino_handler()
 ai_talk_inst = AiTalk(chatgpt, gigachat)
 bot.register_message_handler(ai_talk_inst.start_ai_talk_listener)
 
