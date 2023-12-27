@@ -53,7 +53,7 @@ class ChatGPT:
 
             async for line in response.content:
                 if line and line.startswith(b"data:"):
-                    # print(line)
+                    logger.debug(line)
                     line = line[6:-1]  # remove "data: " prefix and "\n" suffix
                     if line.strip() == b"[DONE]":
                         if text_buffer:
@@ -66,10 +66,8 @@ class ChatGPT:
                                 yield text_buffer
                             return
 
-                        content = msg['delta']['content']
-
-                        if content:
-                            text_buffer += content
+                        if ('content' in msg['delta']) and msg['delta']['content']:
+                            text_buffer += msg['delta']['content']
 
                             current_cooldown -= 1
                             if current_cooldown <= 0:
@@ -110,7 +108,7 @@ class GigaChat:
                 return
 
             async for line in response.content:
-                # print(line)
+                logger.debug(line)
                 if line and line.startswith(b"data:"):
                     line = line[6:-1]  # remove "data: " prefix and "\n" suffix
                     if line.strip() == b"[DONE]":
