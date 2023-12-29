@@ -35,7 +35,12 @@ def get_city_letter(city, i=-1):
     return get_city_letter(city, i - 1)
 
 
-@bot.message_handler(['cities'])
+def register_cities_handler():
+    bot.register_message_handler(cities_cmd, commands=['cities'])
+    bot.register_message_handler(cities_game_handler, state=States.CITIES)
+    bot.register_callback_query_handler(inline_btn_complex_change, None,
+                                        text=TextFilter(starts_with='btn_complex'))
+
 async def cities_cmd(msg: Message):
     await BotDB.set_state(msg.chat.id, States.CITIES, {
         'complex_msg': (await bot.send_message(
@@ -44,7 +49,6 @@ async def cities_cmd(msg: Message):
         'letter': '', 'complex': 'e'})
 
 
-@bot.message_handler(state=States.CITIES)
 async def cities_game_handler(msg: Message, data):
     state_data = ujson.loads(data['state_data'])
 
@@ -77,7 +81,6 @@ async def cities_game_handler(msg: Message, data):
     await BotDB.set_state(msg.chat.id, States.CITIES, state_data)
 
 
-@bot.callback_query_handler(None, text=TextFilter(starts_with='btn_complex'))
 async def inline_btn_complex_change(call: CallbackQuery):
     state, data = await BotDB.get_state(call.message.chat.id)
     if state != States.CITIES:
