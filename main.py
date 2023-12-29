@@ -17,6 +17,7 @@ from functions.simple_cmds import init_simple_commands
 from functions.voice_msg import register_voice_msg_handler
 from functions.casino import register_casino_handler
 from functions.weather import register_weather_handler
+from functions.cities import register_cities_handler
 from helpers import config, session_manager
 from helpers.bot import bot
 from helpers.db import BotDB
@@ -44,7 +45,6 @@ chatgpt = ChatGPT(config.openai_key)
 gigachat = GigaChat(config.gigachat_secret)
 
 init_simple_commands()
-register_weather_handler()
 register_voice_msg_handler()
 register_photo_desc_handler()
 register_ai_upscale_handler()
@@ -58,6 +58,8 @@ async def command_cancel(msg: Message):
     await BotDB.set_state(msg.chat.id, -1)
 
 
+register_cities_handler()
+register_weather_handler()
 register_casino_handler()
 ai_talk_inst = AiTalk(chatgpt, gigachat)
 bot.register_message_handler(ai_talk_inst.start_ai_talk_listener)
