@@ -17,7 +17,7 @@ from functions.simple_cmds import init_simple_commands
 from functions.voice_msg import register_voice_msg_handler
 from functions.casino import register_casino_handler
 from functions.weather import register_weather_handler
-from functions.cities import register_cities_handler
+from functions.cities_game import register_cities_handler
 from helpers import config, session_manager
 from helpers.bot import bot
 from helpers.db import BotDB
