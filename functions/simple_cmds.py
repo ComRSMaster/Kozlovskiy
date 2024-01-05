@@ -65,13 +65,6 @@ def init_simple_commands():
         await bot.reply_to(msg, choice(msg.poll.options).text)
 
     # admin only commands
-    @bot.message_handler(['kill_bot'], chat_id=[admin_chat])
-    async def command_kill_bot(msg: Message):
-        await bot.remove_webhook()
-        await bot.send_message(msg.chat.id, "Бот успешно отключен")
-        print("bot killed")
-        # noinspection PyProtectedMember
-        os._exit(0)
 
     @bot.message_handler(['exec'], chat_id=[admin_chat])
     async def command_exec(msg: Message):
