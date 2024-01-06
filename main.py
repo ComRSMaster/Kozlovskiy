@@ -98,8 +98,7 @@ async def webhook_endpoint(request):
 
 
 async def startup():
-    if not config.is_dev:
-        await bot.set_webhook(url=config.web_url + config.bot_token)
+    await bot.set_webhook(url=config.web_url + config.bot_token)
     print("server started")
 
 
@@ -120,10 +119,12 @@ routes = [
     Mount('/', StaticFiles(directory='website', html=True))
 ]
 
-app = Starlette(routes=routes, on_startup=[startup], on_shutdown=[shutdown])
+app = Starlette(routes=routes, on_shutdown=[shutdown])
 
 # Запуск бота
 if config.is_dev:
     BotDB.loop.create_task(bot.infinity_polling(skip_pending=True))
+else:
+    BotDB.loop.create_task(startup())
 
 BotDB.loop.create_task(timer())
