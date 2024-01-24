@@ -110,7 +110,7 @@ async def inline_btn_upscale_settings(call: CallbackQuery):
         await bot.answer_callback_query(call.id, 'Введите команду /up ещё раз', True)
         return
 
-    scale = int(call.data[call.data.rfind('_') + 1:])
+    scale = call.data[call.data.rfind('_') + 1:]
     if data['scale'] == scale:
         return
     data['scale'] = scale
