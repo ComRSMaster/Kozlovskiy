@@ -33,12 +33,10 @@ async def upscale_cmd_handler(msg: Message):
     file_id = None
     if msg.reply_to_message is not None:
         if msg.reply_to_message.content_type == "photo":
-            for i in msg.reply_to_message.photo:
-                print(i.width, i.height)
             file_id = msg.reply_to_message.photo[-1].file_id
         elif msg.reply_to_message.content_type == "document":
-            pprint(msg.reply_to_message.document)
             file_id = msg.reply_to_message.document.file_id
+    scale = extract_arguments(msg.text)
     if scale not in ['15', '25', '50']:
         scale = '15'
     if file_id is None:
