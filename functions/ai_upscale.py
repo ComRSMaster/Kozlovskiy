@@ -40,7 +40,7 @@ async def upscale_cmd_handler(msg: Message):
     if scale not in ['15', '25', '50']:
         scale = '15'
     if file_id is None:
-        menu = await bot.send_message(msg.chat.id, upscale_text, reply_markup=gen_settings_markup(scale, False))
+        menu = await bot.send_message(msg.chat.id, upscale_text, reply_markup=gen_settings_markup(scale))
 
         await BotDB.set_state(msg.chat.id, States.UP_PHOTO, {'scale': scale, 'msg_id': menu.id})
     else:
