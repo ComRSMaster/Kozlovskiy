@@ -44,7 +44,7 @@ async def upscale_cmd_handler(msg: Message):
 
         await BotDB.set_state(msg.chat.id, States.UP_PHOTO, {'scale': scale, 'msg_id': menu.id})
     else:
-        await image_upscale(msg.chat.id, file_id, scale, False)
+        await image_upscale(msg.chat.id, file_id, scale)
 
 
 async def wait_photo_state(msg: Message, data):
