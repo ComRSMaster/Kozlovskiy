@@ -66,7 +66,7 @@ async def image_upscale(chat_id, file_id, scale):
     try:
         async with session.post('https://api.replicate.com/v1/predictions', json={
             "version": "660d922d33153019e8c263a3bba265de882e7f4f70396546b6c9c8f9d47a021a",
-            "input": {"image": await bot.get_file_url(file_id), "noise": scale, 
+            "input": {"image": await bot.get_file_url(file_id), "noise": int(scale), 
                       "task_type": "Real-World Image Super-Resolution-Large"}}) as resp_raw:
             response = await resp_raw.json(loads=ujson.loads)
             if resp_raw.status != 201:
