@@ -16,9 +16,6 @@ from helpers.session_manager import auto_close
 from helpers.user_states import States
 from helpers.utils import send_status_periodic, bool_emoji
 
-# USER_AGENT = \
-#     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36'
-
 
 session = auto_close(aiohttp.ClientSession(headers={
     "Authorization": f"Token {replicate_key}", "Content-Type": "application/json"
@@ -36,22 +33,18 @@ async def upscale_cmd_handler(msg: Message):
     file_id = None
     if msg.reply_to_message is not None:
         if msg.reply_to_message.content_type == "photo":
-            for i in msg.reply_to_message.photo:
-                print(i.width, i.height)
             file_id = msg.reply_to_message.photo[-1].file_id
         elif msg.reply_to_message.content_type == "document":
-            pprint(msg.reply_to_message.document)
             file_id = msg.reply_to_message.document.file_id
-    try:
-        scale = min(max(int(extract_arguments(msg.text)), 1), 10)
-    except ValueError:
-        scale = 4
+    scale = extract_arguments(msg.text)
+    if scale not in ['15', '25', '50']:
+        scale = '15'
     if file_id is None:
-        menu = await bot.send_message(msg.chat.id, upscale_text, reply_markup=gen_settings_markup(scale, False))
+        menu = await bot.send_message(msg.chat.id, upscale_text, reply_markup=gen_settings_markup(scale))
 
-        await BotDB.set_state(msg.chat.id, States.UP_PHOTO, {'scale': scale, 'face': False, 'msg_id': menu.id})
+        await BotDB.set_state(msg.chat.id, States.UP_PHOTO, {'scale': scale, 'msg_id': menu.id})
     else:
-        await image_upscale(msg.chat.id, file_id, scale, False)
+        await image_upscale(msg.chat.id, file_id, scale)
 
 
 async def wait_photo_state(msg: Message, data):
@@ -63,18 +56,18 @@ async def wait_photo_state(msg: Message, data):
     state_data = ujson.loads(data['state_data'])
     await BotDB.set_state(msg.chat.id, -1)
     asyncio.ensure_future(bot.edit_message_reply_markup(msg.chat.id, state_data['msg_id']))
-    await image_upscale(msg.chat.id, file_id, state_data['scale'], state_data['face'])
+    await image_upscale(msg.chat.id, file_id, state_data['scale'])
 
 
-async def image_upscale(chat_id, file_id, scale, face_enhance):
+async def image_upscale(chat_id, file_id, scale):
     loop = asyncio.get_event_loop()
     status_task = loop.create_task(send_status_periodic(chat_id, 'upload_document'))
 
     try:
         async with session.post('https://api.replicate.com/v1/predictions', json={
-            "version": "42fed1c4974146d4d2414e2be2c5277c7fcf05fcc3a73abf41610695738c1d7b",
-            "input": {"image": await bot.get_file_url(file_id),
-                      "scale": scale, "face_enhance": face_enhance}}) as resp_raw:
+            "version": "660d922d33153019e8c263a3bba265de882e7f4f70396546b6c9c8f9d47a021a",
+            "input": {"image": await bot.get_file_url(file_id), "noise": int(scale), 
+                      "task_type": "Real-World Image Super-Resolution-Large"}}) as resp_raw:
             response = await resp_raw.json(loads=ujson.loads)
             if resp_raw.status != 201:
                 logger.error(f'{resp_raw.status}\n{response}')
@@ -85,7 +78,7 @@ async def image_upscale(chat_id, file_id, scale, face_enhance):
             async with session.get(f"https://api.replicate.com/v1/predictions/{response['id']}") as resp_raw:
                 response = await resp_raw.json(loads=ujson.loads)
 
-        caption = f"Масштаб: <b>{scale}</b>\n{'С улучшением лица' if face_enhance else 'Без улучшения лица'}"
+        caption = f"Масштаб: <b>{scale}</b>"
         if response['status'] == "succeeded":
             try:
                 async with session.head(response['output']) as size_resp:
@@ -102,7 +95,7 @@ async def image_upscale(chat_id, file_id, scale, face_enhance):
         elif response['error'].startswith("'NoneType'"):
             await bot.send_message(chat_id, "<b>❌ Тип файла не поддерживается...</b>")
         elif response['error'].startswith("CUDA out of memory"):
-            await bot.send_message(chat_id, "<b>❌ Ошибка: фото слишком большое</b>")
+            await bot.send_message(chat_id, "<b>❌ Ошибка: фото слишком большое, попроуйте позже</b>")
         else:
             await bot.send_message(chat_id, f"<b>❌ Неизвестная ошибка... <pre>{response['error']}</pre></b>")
     finally:
@@ -117,31 +110,24 @@ async def inline_btn_upscale_settings(call: CallbackQuery):
         await bot.answer_callback_query(call.id, 'Введите команду /up ещё раз', True)
         return
 
-    if call.data[9:].startswith('scale'):
-        scale = int(call.data[call.data.rfind('_') + 1:])
-        if data['scale'] == scale:
-            return
-        data['scale'] = scale
-    else:  # face enhance
-        data['face'] = not data['face']
+    scale = call.data[call.data.rfind('_') + 1:]
+    if data['scale'] == scale:
+        return
+    data['scale'] = scale
 
     try:
         await bot.edit_message_reply_markup(call.message.chat.id, call.message.id,
-                                            reply_markup=gen_settings_markup(data['scale'], data['face']))
+                                            reply_markup=gen_settings_markup(data['scale']))
     except ApiTelegramException:
         pass
 
     await BotDB.set_state(call.message.chat.id, States.UP_PHOTO, data)
 
 
-def gen_settings_markup(scale, face_enhance):
-    settings_markup = {str(i): {'callback_data': f'btn_aiup_scale_{i}'} for i in range(2, scale, 2)}
-    settings_markup[f'{scale} ✅'] = {'callback_data': f'btn_aiup_scale_{scale}'}
-    settings_markup.update({str(i): {'callback_data': f'btn_aiup_scale_{i}'} for i in range(scale + 2, 11, 2)})
+def gen_settings_markup(scale):
+    settings_markup = {(i + (' ✅' if i == scale else '')): {'callback_data': f'btn_aiup_scale_{i}'} for i in ['15', '25', '50']}
 
-    settings_markup[f"Улучшить лицо {bool_emoji(face_enhance)}"] = {'callback_data': 'btn_aiup_face'}
-
-    return quick_markup(settings_markup, row_width=5)
+    return quick_markup(settings_markup, row_width=3)
 
 # async def image_upscale(self, chat_id, file_id):
 #     loop = asyncio.get_event_loop()

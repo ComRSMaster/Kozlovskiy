@@ -11,7 +11,8 @@ from functions.simple_cmds import init_simple_commands
 from functions.voice_msg import register_voice_msg_handler
 from functions.casino import register_casino_handler
 from functions.weather import register_weather_handler
-from helpers import config
+from functions.cities_game import register_cities_handler
+from helpers import config, session_manager
 from helpers.bot import bot
 from helpers.db import BotDB
 from helpers.gpts.gpts_apis import ChatGPT, GigaChat
@@ -38,7 +39,6 @@ chatgpt = ChatGPT(config.openai_key)
 gigachat = GigaChat(config.gigachat_secret)
 
 init_simple_commands()
-register_weather_handler()
 register_voice_msg_handler()
 register_photo_desc_handler()
 register_ai_upscale_handler()
@@ -52,6 +52,8 @@ async def command_cancel(msg: Message):
     await BotDB.set_state(msg.chat.id, -1)
 
 
+register_cities_handler()
+register_weather_handler()
 register_casino_handler()
 ai_talk_inst = AiTalk(chatgpt, gigachat)
 bot.register_message_handler(ai_talk_inst.start_ai_talk_listener)
@@ -108,7 +110,7 @@ async def set_webhook():
 # Запуск бота
 if config.is_dev:
     BotDB.loop.run_until_complete(bot.delete_webhook())
-    BotDB.loop.run_until_complete(bot.infinity_polling(skip_pending=True))
+    BotDB.loop.create_task(bot.infinity_polling(skip_pending=True))
     print("polling started")
 else:
     BotDB.loop.run_until_complete(set_webhook())
