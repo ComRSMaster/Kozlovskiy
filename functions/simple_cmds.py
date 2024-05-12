@@ -9,6 +9,7 @@ import ujson
 from telebot.asyncio_helper import ApiTelegramException
 from telebot.formatting import escape_html
 from telebot.types import Message, ReplyKeyboardRemove
+from telebot.util import smart_split
 
 from functions.ai_talk import gen_init_markup
 from functions.chat_cmd import todict
@@ -48,8 +49,9 @@ def init_simple_commands():
 
     @bot.message_handler(['info'], is_reply=True)
     async def command_id(msg: Message):
-        await bot.send_message(msg.chat.id,
-                               f'<pre class="language-json">{escape_html(str(msg.reply_to_message))}</pre>')
+        for block in smart_split(str(msg.reply_to_message), 4000):
+            await bot.send_message(msg.chat.id,
+                                   f'<pre class="language-json">{block}</pre>')
 
     @bot.message_handler(['rnd'])
     async def command_rnd(msg: Message):
