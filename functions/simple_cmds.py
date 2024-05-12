@@ -5,10 +5,13 @@ from asyncio import sleep
 from io import StringIO
 from random import randint, choice
 
+import ujson
 from telebot.asyncio_helper import ApiTelegramException
+from telebot.formatting import escape_html
 from telebot.types import Message, ReplyKeyboardRemove
 
 from functions.ai_talk import gen_init_markup
+from functions.chat_cmd import todict
 from helpers.bot import bot
 from helpers.config import admin_chat
 from helpers.db import BotDB
@@ -42,6 +45,11 @@ def init_simple_commands():
         await BotDB.set_state(msg.chat.id, States.GETTING_ID)
         await bot.send_message(msg.chat.id, "Теперь перешли мне любое сообщение из чата, "
                                             "или поделись со мной контактом этого человека.\n /cancel - отмена")
+
+    @bot.message_handler(['info'], is_reply=True)
+    async def command_id(msg: Message):
+        await bot.send_message(msg.chat.id,
+                               f'<pre class="language-json">{escape_html(str(msg.reply_to_message))}</pre>')
 
     @bot.message_handler(['rnd'])
     async def command_rnd(msg: Message):

@@ -5,8 +5,8 @@ tzdata
 pyTelegramBotAPI
 uvicorn
 websockets
-starlette
 aiomysql
 aiohttp
 cryptography
 chess
+PyMySQL

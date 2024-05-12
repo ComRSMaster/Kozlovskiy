@@ -1,5 +1,8 @@
 from os.path import isfile
 
+from telebot.asyncio_helper import ApiTelegramException
+from telebot.util import escape
+
 from helpers.bot import bot
 from helpers.config import success_vid, admin_chat
 from helpers.db import BotDB
@@ -70,12 +73,15 @@ async def new_group_cr(chat: Chat):
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("Ignore", callback_data=f"btn_ignore_{chat.id}"))
     await bot.send_message(admin_chat,
-                           f"<b>Новая группа: {chat.title}  <code>{chat.id}</code></b>", reply_markup=markup)
+                           f"<b>Новая группа: {escape(chat.title)}  <code>{chat.id}</code></b>", reply_markup=markup)
 
 
 async def new_private_cr(chat: Chat):
-    await bot.send_video(chat.id, success_vid, caption="<b>Чем я могу помочь?</b>🤔")
+    try:
+        await bot.send_video(chat.id, success_vid, caption="<b>Чем я могу помочь?</b>🤔")
+    except ApiTelegramException:
+        await bot.send_message(chat.id, "<b>Чем я могу помочь?</b>🤔")
     await BotDB.new_user(chat.id, chat.first_name + n(chat.last_name, " "), chat.bio, True)
     await update_user_info(await bot.get_chat(chat.id))
 
-    await bot.send_message(admin_chat, f"<b>Новый пользователь: {chat.first_name}  <code>{chat.id}</code></b>")
+    await bot.send_message(admin_chat, f"<b>Новый пользователь: {escape(chat.first_name + ' ' + chat.last_name)}  <code>{chat.id}</code></b>")
