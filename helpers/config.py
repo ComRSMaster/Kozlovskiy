@@ -4,6 +4,7 @@ import os
 
 is_dev = bool(os.getenv('dev', False))
 bot_token = os.getenv("bot_token")
+webhook_token = os.getenv("webhook_token")
 replicate_key = os.getenv("replicate_key")
 weather_key = os.getenv("weather_key")
 tts_key = os.getenv("tts_key")
@@ -15,6 +16,9 @@ web_url = os.getenv("web_url")
 success_vid = os.getenv("success_vid")
 admin_chat = int(os.getenv("admin_chat"))
 together_token = None
+
+host = os.getenv("IP")
+port = int(os.getenv("PORT"))
 
 mysql_server = os.getenv("mysql_server")
 mysql_user = os.getenv("mysql_user")

@@ -1,17 +1,11 @@
 import ujson
-from starlette.applications import Starlette
-from starlette.responses import Response
-from starlette.routing import Mount, Route, WebSocketRoute
-from starlette.staticfiles import StaticFiles
+from aiohttp import web
 from telebot.types import Update, Message, ReplyKeyboardRemove
-from telebot.util import content_type_media
 
-from functions import voice_msg
 from functions.ai_talk import AiTalk
 from functions.ai_upscale import register_ai_upscale_handler
 from functions.books import register_books_handler
 from functions.chat_cmd import register_chat_handler
-from functions.chess import chess_mp_endpoint, get_chess_games
 from functions.photo_desc import register_photo_desc_handler
 from functions.simple_cmds import init_simple_commands
 from functions.voice_msg import register_voice_msg_handler
@@ -23,10 +17,10 @@ from helpers.bot import bot
 from helpers.db import BotDB
 from helpers.gpts.gpts_apis import ChatGPT, GigaChat
 from helpers.middleware import ChatManagement
+from helpers.server import routes, app_factory
 from helpers.timer import timer
 
 bot.setup_middleware(ChatManagement())
-
 
 # from helpers.timer import timer
 
@@ -65,18 +59,17 @@ ai_talk_inst = AiTalk(chatgpt, gigachat)
 bot.register_message_handler(ai_talk_inst.start_ai_talk_listener)
 
 
-@bot.message_handler(content_types=content_type_media)
-async def chatting(msg: Message):
-    pass
-    # if state == "wait_for_book_name":
-    #     book_name_upload_state(msg)
-    #     return
-    # elif state == "wait_for_book" or state == "wait_for_done":
-    #     book_upload_state(msg)
-    #     return
-    # elif state == "wait_for_pub":
-    #     wait_user_upload_state(msg, state)
-    #     return TODO
+# @bot.message_handler(content_types=content_type_media)
+# async def chatting(msg: Message):
+#     if state == "wait_for_book_name":
+#         book_name_upload_state(msg)
+#         return
+#     elif state == "wait_for_book" or state == "wait_for_done":
+#         book_upload_state(msg)
+#         return
+#     elif state == "wait_for_pub":
+#         wait_user_upload_state(msg, state)
+#         return TODO
 
 
 # @bot.callback_query_handler(None)
@@ -91,40 +84,39 @@ async def chatting(msg: Message):
 #         bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
 
 
+@routes.post('/tg_webhook')
+async def webhook_endpoint(request: web.Request):
+    if request.headers.get('X-Telegram-Bot-Api-Secret-Token') != config.webhook_token:
+        return web.Response(status=403)
 
-async def webhook_endpoint(request):
-    await bot.process_new_updates([Update.de_json(ujson.loads(await request.body()))])
-    return Response()
-
-
-async def startup():
-    await bot.set_webhook(url=config.web_url + config.bot_token)
-    print("server started")
-
-
-async def shutdown():
-    await bot.close_session()
-
-    if BotDB.pool is not None:
-        await BotDB.pool.clear()
-
-    await session_manager.close_all_sessions()
-    print("server stopped")
+    data = await request.json(loads=ujson.loads)
+    await bot.process_new_updates([Update.de_json(data)])
+    return web.Response()
 
 
-routes = [
-    Route(f'/{config.bot_token}', webhook_endpoint, methods=['POST']),
-    Route('/chess_games', get_chess_games, methods=['GET']),
-    WebSocketRoute('/cmp', chess_mp_endpoint),  # chess multiplayer
-    Mount('/', StaticFiles(directory='website', html=True))
-]
+async def set_webhook():
+    await bot.set_webhook(url=config.web_url + 'tg_webhook', secret_token=config.webhook_token)
 
-app = Starlette(routes=routes, on_shutdown=[shutdown])
+
+# routes1 = [
+#     Route('/chess_games', get_chess_games, methods=['GET']),
+#     WebSocketRoute('/cmp', chess_mp_endpoint),  # chess multiplayer
+#     Mount('/', StaticFiles(directory='website', html=True))
+# ]
+
+# app = Starlette(routes=routes, on_startup=[startup], on_shutdown=[shutdown])
+
 
 # Запуск бота
 if config.is_dev:
-    BotDB.loop.create_task(bot.infinity_polling(skip_pending=True))
+    BotDB.loop.run_until_complete(bot.delete_webhook())
+    BotDB.loop.run_until_complete(bot.infinity_polling(skip_pending=True))
+    print("polling started")
 else:
-    BotDB.loop.create_task(startup())
+    BotDB.loop.run_until_complete(set_webhook())
+    print("server started")
+
 
 BotDB.loop.create_task(timer())
+
+web.run_app(app_factory(), host=config.host, port=config.port, loop=BotDB.loop)
