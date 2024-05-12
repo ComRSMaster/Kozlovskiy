@@ -110,7 +110,7 @@ async def set_webhook():
 # Запуск бота
 if config.is_dev:
     BotDB.loop.run_until_complete(bot.delete_webhook())
-    BotDB.loop.create_task(bot.infinity_polling(skip_pending=True))
+    BotDB.loop.run_until_complete(bot.infinity_polling(skip_pending=True))
     print("polling started")
 else:
     BotDB.loop.run_until_complete(set_webhook())
@@ -119,4 +119,4 @@ else:
 
 BotDB.loop.create_task(timer())
 
-web.run_app(app_factory(), host=config.host, port=config.port)
+web.run_app(app_factory(), host=config.host, port=config.port, loop=BotDB.loop)
