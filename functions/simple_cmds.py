@@ -51,7 +51,7 @@ def init_simple_commands():
     async def command_id(msg: Message):
         for block in smart_split(str(msg.reply_to_message), 4000):
             await bot.send_message(msg.chat.id,
-                                   f'<pre class="language-json">{block}</pre>')
+                                   f'<pre class="language-json">{escape_html(block)}</pre>')
 
     @bot.message_handler(['rnd'])
     async def command_rnd(msg: Message):
