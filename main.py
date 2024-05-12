@@ -95,7 +95,7 @@ async def webhook_endpoint(request: web.Request):
 
 
 async def set_webhook():
-    await bot.set_webhook(url=config.web_url + config.bot_token, secret_token=config.webhook_token)
+    await bot.set_webhook(url=config.web_url + 'tg_webhook', secret_token=config.webhook_token)
 
 
 # routes1 = [
