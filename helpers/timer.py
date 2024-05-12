@@ -55,10 +55,11 @@ async def timer_step():
             await bot.send_message(admin_chat, f"Я поздравил с ДР: {chat_id}")
         elif is_greeted:
             await BotDB.execute("UPDATE `users` SET `is_greeted` = DEFAULT WHERE `id` = %s", chat_id)
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.7)
 
 
 async def timer():
     while True:
+        await asyncio.sleep(30)
         await timer_step()
         await asyncio.sleep(3000)

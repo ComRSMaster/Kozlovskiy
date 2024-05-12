@@ -1,4 +1,3 @@
-import os
 import re
 import sys
 from asyncio import sleep
@@ -6,7 +5,9 @@ from io import StringIO
 from random import randint, choice
 
 from telebot.asyncio_helper import ApiTelegramException
+from telebot.formatting import escape_html
 from telebot.types import Message, ReplyKeyboardRemove
+from telebot.util import smart_split
 
 from functions.ai_talk import gen_init_markup
 from helpers.bot import bot
@@ -41,7 +42,13 @@ def init_simple_commands():
     async def command_id(msg: Message):
         await BotDB.set_state(msg.chat.id, States.GETTING_ID)
         await bot.send_message(msg.chat.id, "Теперь перешли мне любое сообщение из чата, "
-                                            "или поделись со мной контактом этого человека.\n /cancel - отмена")
+                                            "или поделись со мной контактом этого человека.\n/cancel - отмена")
+
+    @bot.message_handler(['info'], is_reply=True)
+    async def command_id(msg: Message):
+        for block in smart_split(str(msg.reply_to_message), 4000):
+            await bot.send_message(msg.chat.id,
+                                   f'<pre class="language-json">{escape_html(block)}</pre>')
 
     @bot.message_handler(['rnd'])
     async def command_rnd(msg: Message):

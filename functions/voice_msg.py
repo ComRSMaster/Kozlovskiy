@@ -3,10 +3,13 @@ import re
 
 import aiohttp
 import ujson
+from telebot.formatting import escape_html
 from telebot.types import Message
+from telebot.util import smart_split
 
 from helpers.bot import bot
 from helpers.config import assemblyai_key
+from helpers.db import BotDB
 from helpers.session_manager import auto_close
 
 RE_EMOJI = re.compile("["
@@ -20,6 +23,8 @@ RE_EMOJI = re.compile("["
 
 assemblyai_session = auto_close(
     aiohttp.ClientSession('https://api.assemblyai.com', json_serialize=ujson.dumps))
+
+
 # tts_session = auto_close(aiohttp.ClientSession('https://api.voicerss.org'))
 
 
@@ -35,9 +40,25 @@ async def decode_cmd_handler(msg: Message):
                                "\n<i>Если вы сделали всё правильно и видите это сообщение, "
                                "то перешлите сюда это голосовое</i>")
     else:
-        progress_id = (await bot.reply_to(msg.reply_to_message, "Расшифровка...")).id
+        BotDB.loop.create_task(decode_msg_task(file_id, msg))
 
-        await bot.edit_message_text(await stt(file_id, True), msg.reply_to_message.chat.id, progress_id)
+
+async def decode_msg_task(file_id, msg: Message):
+    progress_id = (await bot.reply_to(msg.reply_to_message, "<b>Расшифровка...</b>")).id
+
+    try:
+        decoded_text = await stt(file_id)
+    except RuntimeError as e:
+        decoded_text = str(e)
+    decoded_text = escape_html(decoded_text)
+
+    await bot.edit_message_text(f"<b>Расшифровка:</b>\n<blockquote expandable>{decoded_text[:4083]}</blockquote>",
+                                msg.chat.id, progress_id)
+    if len(decoded_text) > 4083:
+        for block in smart_split(decoded_text[4083:], 4096):
+            if block.isspace():
+                continue
+            await bot.send_message(msg.chat.id, f"<blockquote expandable>{block}</blockquote>")
 
 
 def get_voice_id(msg: Message, reply: bool):
@@ -57,7 +78,7 @@ def get_voice_id(msg: Message, reply: bool):
     return file_id
 
 
-async def stt(file_id: str, stats):
+async def stt(file_id: str):
     headers = {"authorization": assemblyai_key}
 
     async with assemblyai_session.post('/v2/transcript',
@@ -72,20 +93,12 @@ async def stt(file_id: str, stats):
             print(result)
 
         if result['status'] == 'completed':
-            text = result['text']
-            break
+            return result['text']
 
         elif result['status'] == 'error':
-            text = f"❌ Возникла ошибка: {result['error']}" if stats else "Скажи что-нибудь"
-            break
+            raise RuntimeError(f"❌ Не удалось расшифровать: {result['error']}")
 
-        await asyncio.sleep(2)
-
-    if not text:
-        text = "Тут ничего нет🤔" if stats else "Скажи что-нибудь"
-
-    print(text)
-    return text
+        await asyncio.sleep(3)
 
 # async def tts(text: str):
 #     async with tts_session.post(

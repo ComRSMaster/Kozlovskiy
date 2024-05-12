@@ -4,9 +4,6 @@ from starlette.responses import Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from telebot.types import Update, Message, ReplyKeyboardRemove
-from telebot.util import content_type_media
-
-from functions import voice_msg
 from functions.ai_talk import AiTalk
 from functions.ai_upscale import register_ai_upscale_handler
 from functions.books import register_books_handler
@@ -65,18 +62,17 @@ ai_talk_inst = AiTalk(chatgpt, gigachat)
 bot.register_message_handler(ai_talk_inst.start_ai_talk_listener)
 
 
-@bot.message_handler(content_types=content_type_media)
-async def chatting(msg: Message):
-    pass
-    # if state == "wait_for_book_name":
-    #     book_name_upload_state(msg)
-    #     return
-    # elif state == "wait_for_book" or state == "wait_for_done":
-    #     book_upload_state(msg)
-    #     return
-    # elif state == "wait_for_pub":
-    #     wait_user_upload_state(msg, state)
-    #     return TODO
+# @bot.message_handler(content_types=content_type_media)
+# async def chatting(msg: Message):
+#     if state == "wait_for_book_name":
+#         book_name_upload_state(msg)
+#         return
+#     elif state == "wait_for_book" or state == "wait_for_done":
+#         book_upload_state(msg)
+#         return
+#     elif state == "wait_for_pub":
+#         wait_user_upload_state(msg, state)
+#         return TODO
 
 
 # @bot.callback_query_handler(None)
@@ -93,13 +89,10 @@ async def chatting(msg: Message):
 
 
 async def webhook_endpoint(request):
+    if request.headers.get('X-Telegram-Bot-Api-Secret-Token') != config.webhook_token:
+        return Response(status_code=403)
     await bot.process_new_updates([Update.de_json(ujson.loads(await request.body()))])
     return Response()
-
-
-async def startup():
-    await bot.set_webhook(url=config.web_url + config.bot_token)
-    print("server started")
 
 
 async def shutdown():
@@ -112,8 +105,12 @@ async def shutdown():
     print("server stopped")
 
 
+async def set_webhook():
+    await bot.set_webhook(url=config.web_url + 'tg_webhook', secret_token=config.webhook_token)
+
+
 routes = [
-    Route(f'/{config.bot_token}', webhook_endpoint, methods=['POST']),
+    Route('/tg_webhook', webhook_endpoint, methods=['POST']),
     Route('/chess_games', get_chess_games, methods=['GET']),
     WebSocketRoute('/cmp', chess_mp_endpoint),  # chess multiplayer
     Mount('/', StaticFiles(directory='website', html=True))
@@ -123,8 +120,11 @@ app = Starlette(routes=routes, on_shutdown=[shutdown])
 
 # Запуск бота
 if config.is_dev:
-    BotDB.loop.create_task(bot.infinity_polling(skip_pending=True))
+    BotDB.loop.run_until_complete(bot.delete_webhook())
+    BotDB.loop.run_until_complete(bot.infinity_polling(skip_pending=True))
+    print("polling started")
 else:
-    BotDB.loop.create_task(startup())
+    BotDB.loop.create_task(set_webhook())
+    print("server started")
 
 BotDB.loop.create_task(timer())

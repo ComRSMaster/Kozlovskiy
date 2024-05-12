@@ -7,7 +7,6 @@ from typing import Union
 import ujson
 from telebot.asyncio_filters import TextFilter
 from telebot.asyncio_helper import ApiTelegramException, logger
-from telebot.formatting import escape_markdown
 from telebot.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, CallbackQuery
 from telebot.util import content_type_media, quick_markup
 
@@ -36,7 +35,6 @@ class AiTalk:
         self.generating_tasks: dict[str, Task] = {}
         bot.register_message_handler(self.ai_talk_handler, state=States.AI_TALK, content_types=content_type_media)
         bot.register_callback_query_handler(self.inline_btn_stop, None, text=TextFilter(starts_with='ai_stop'))
-        bot.register_callback_query_handler(self.inline_btn_stop, None, text=TextFilter(starts_with='ai_stop'))
 
     async def get_ai_response(self, provider: Union[ChatGPT, GigaChat], messages: list, chat_id: int,
                               reply_id: int = None):
@@ -60,7 +58,8 @@ class AiTalk:
                         curr_result = text
                     else:
                         curr_result += text
-                        all_result += text
+
+                    all_result += text
 
                     async def send_to_user(use_md=True):
                         nonlocal msg_id, status_task
@@ -249,7 +248,11 @@ async def get_user_message(msg: Message, voice_id):
         return msg.sticker.emoji
     if voice_id is not None:
         ensure_future(bot.send_chat_action(msg.chat.id, "typing"))
-        return await stt(voice_id, False)
+        try:
+            decoded_text = await stt(voice_id)
+        except RuntimeError as e:
+            decoded_text = str(e)
+        return decoded_text or 'Пустое сообщение'
     if msg.caption is not None:
         return msg.caption
 
