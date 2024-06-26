@@ -60,7 +60,8 @@ class AiTalk:
                         curr_result = text
                     else:
                         curr_result += text
-                        all_result += text
+
+                    all_result += text
 
                     async def send_to_user(use_md=True):
                         nonlocal msg_id, status_task

@@ -1,13 +1,56 @@
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
+from functools import wraps
+from typing import ParamSpec, TypeVar, Callable, Coroutine, Any, cast
 
 import aiomysql
 import ujson
-# noinspection PyPackageRequirements
 from pymysql.err import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from helpers.config import mysql_server, mysql_password, mysql_user
 
+P = ParamSpec("P")
+T = TypeVar("T")
+
+
+def require_session():
+  session = db_session_var.get()
+  assert session is not None, "Session context is not provided"
+  return session
+
+
+def transaction():
+  def wrapper(
+    cb: Callable[P, Coroutine[Any, Any, T]]
+  ) -> Callable[P, Coroutine[Any, Any, T]]:
+    @wraps(cb)
+    async def wrapped(*args: P.args, **kwargs: P.kwargs) -> T:
+      if db_session_var.get() is not None:
+        return await cb(*args, **kwargs)
+
+      async with cast(AsyncSession, SessionLocal()) as session:
+        with use_context_value(db_session_var, session):
+          result = await cb(*args, **kwargs)
+          await session.commit()
+          return result
+
+    return wrapped
+
+  return wrapper
+
+
+@contextmanager
+def use_context_value(context: ContextVar[T], value: T):
+  reset = context.set(value)
+  try:
+    yield
+  finally:
+    context.reset(reset)
+
+
+db_session_var: ContextVar[AsyncSession | None] = ContextVar("db_session_var", default=None)
 
 class _BotDB:
     pool: aiomysql.Pool = None
