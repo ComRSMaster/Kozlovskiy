@@ -10,3 +10,4 @@ aiohttp
 cryptography
 chess
 PyMySQL
+sqlalchemy

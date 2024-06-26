@@ -116,7 +116,7 @@ else:
     BotDB.loop.run_until_complete(set_webhook())
     print("server started")
 
-
 BotDB.loop.create_task(timer())
 
 web.run_app(app_factory(), host=config.host, port=config.port, loop=BotDB.loop)
+# gunicorn -b "[::]:$PORT" -w 4 -k uvicorn.workers.UvicornWorker main:app
