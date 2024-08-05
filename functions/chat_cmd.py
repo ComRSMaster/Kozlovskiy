@@ -58,7 +58,7 @@ async def inline_query_photo(inline_query: InlineQuery):
             "WHERE `only_chess` = 0 AND (`name` LIKE %s OR `desc` LIKE %s)"
             "ORDER BY `name` LIMIT %s, %s", (query, query, offset, 50)):
         results.append(InlineQueryResultArticle(
-            u[0], u[1] else ' ', InputTextMessageContent(f"/chat {u[0]}"),
+            u[0], u[1] or ' ', InputTextMessageContent(f"/chat {u[0]}"),
             description=f"{u[2] or ''}\nНажмите, чтобы написать {'этому человеку' if u[4] else 'в эту группу'}",
             thumbnail_url=None if u[3] is None else f'{web_url}p/{u[3]}.jpg'))
 
