@@ -36,7 +36,7 @@ async def timer_step():
         if MIN_BIRTHDAY_HOUR <= now.hour and now.day == birth_day and now.month == birth_month:
             if is_greeted:
                 continue
-            await bot.send_video(chat_id, success_vid, caption="<b>Поздравляю тебя с днём рождения!</b>🎉🎉🎉")
+            await bot.send_video(chat_id, success_vid, caption="<b>Поздравляю тебя с днём рождения!</b>🎉🎉🎉", message_effect_id=5046509860389126442)
             birthday_dialog = [
                 {"role": "user",
                  "content": "У меня сегодня день рождения!"},
