@@ -3,7 +3,7 @@ from asyncio import ensure_future
 from telebot.asyncio_filters import TextFilter
 from telebot.asyncio_handler_backends import ContinueHandling
 from telebot.asyncio_helper import ApiTelegramException
-from telebot.types import Chat, Message, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, \
+from telebot.types import ChatFullInfo, Message, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, \
     InputMediaPhoto, CallbackQuery, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from telebot.util import quick_markup, chunks, content_type_media, extract_arguments
 
@@ -95,7 +95,7 @@ async def start_chat(chat_id: int, target_chat: str):
     await BotDB.set_state(chat_id, States.CHATTING, target_chat)
 
 
-async def parse_chat(chat: Chat):
+async def parse_chat(chat: ChatFullInfo):
     text = ""
     if chat.type == "private":
         text += f'<b>Начат чат с<a href="tg://user?id={chat.id}">: {chat.first_name}' + \

@@ -24,7 +24,6 @@ from helpers.timer import timer
 
 bot.setup_middleware(ChatManagement())
 
-
 # from helpers.timer import timer
 
 
@@ -87,11 +86,10 @@ bot.register_message_handler(ai_talk_inst.start_ai_talk_listener)
 #         bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
 
 
-
 async def webhook_endpoint(request):
     if request.headers.get('X-Telegram-Bot-Api-Secret-Token') != config.webhook_token:
         return Response(status_code=403)
-    await bot.process_new_updates([Update.de_json(ujson.loads(await request.body()))])
+    BotDB.loop.create_task(bot.process_new_updates([Update.de_json(ujson.loads(await request.body()))]))
     return Response()
 
 
@@ -106,7 +104,8 @@ async def shutdown():
 
 
 async def set_webhook():
-    await bot.set_webhook(url=config.web_url + 'tg_webhook', secret_token=config.webhook_token)
+    await bot.set_webhook(url=config.web_url + 'tg_webhook', secret_token=config.webhook_token, max_connections=1000)
+    print("webhook set")
 
 
 routes = [
@@ -120,8 +119,8 @@ app = Starlette(routes=routes, on_shutdown=[shutdown])
 
 # Запуск бота
 if config.is_dev:
-    BotDB.loop.run_until_complete(bot.delete_webhook())
-    BotDB.loop.run_until_complete(bot.infinity_polling(skip_pending=True))
+    BotDB.loop.create_task(bot.delete_webhook())
+    BotDB.loop.create_task(bot.infinity_polling(skip_pending=True))
     print("polling started")
 else:
     BotDB.loop.create_task(set_webhook())
