@@ -24,6 +24,7 @@ def register_chat_handler():
 
     bot.register_callback_query_handler(profile_photo_button, None, text=TextFilter(starts_with='btn_photo'))
     bot.register_callback_query_handler(pinned_msg_button, None, text=TextFilter(starts_with='btn_pinned'))
+    bot.register_callback_query_handler(start_chat_button, None, text=TextFilter(starts_with='btn_chat'))
 
     bot.register_edited_message_handler(edit_msg_handler, content_types=content_type_media)
     bot.register_inline_handler(inline_query_photo, None)
@@ -149,6 +150,11 @@ async def pinned_msg_button(call: CallbackQuery):
             await bot.answer_callback_query(call.id, "Сообщение не закреплено!")
             return
     await bot.answer_callback_query(call.id, "Закреп отправлен!")
+
+
+async def start_chat_button(call: CallbackQuery):
+    await start_chat(call.message.chat.id, call.data[call.data.rfind("_") + 1:])
+    await bot.answer_callback_query(call.id, "Чат начат!")
 
 
 def todict(obj):

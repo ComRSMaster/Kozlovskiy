@@ -78,9 +78,6 @@ bot.register_message_handler(ai_talk_inst.start_ai_talk_listener)
 # def query(call: CallbackQuery):
 #     elif data.startswith("btn_upload"):
 #         book_upload_button(data, call)
-#     elif data.startswith("btn_chat"):
-#         start_chat(str(call.message.chat.id), data[data.rfind("_") + 1:])
-#         bot.answer_callback_query(call.id, "Чат начат!")
 #     elif data.startswith("btn_ignore"):
 #         db.stats.ignore.append(int(data[data.rfind("_") + 1:]))
 #         bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
