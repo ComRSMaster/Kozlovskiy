@@ -75,6 +75,8 @@ def get_voice_id(msg: Message, reply: bool):
         file_id = msg.video_note.file_id
     elif msg.content_type == "video":
         file_id = msg.video.file_id
+    elif msg.content_type == "document":
+        file_id = msg.document.file_id
     return file_id
 
 
