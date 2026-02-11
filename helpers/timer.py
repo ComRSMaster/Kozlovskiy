@@ -22,7 +22,8 @@ async def timer_step():
     for chat_id, birth_day, birth_month, is_greeted, state in await BotDB.fetchall(
             "SELECT `id`, `birth_day`, `birth_month`, `is_greeted`, `state` FROM `users` WHERE `only_chess` = 0"):
         try:
-            await update_user_info(await bot.get_chat(chat_id))
+            chat_data = await bot.get_chat(chat_id)
+            await update_user_info(chat_data)
         except ApiTelegramException as e:
             if 'chat not found' in e.description:
                 pass
@@ -37,7 +38,7 @@ async def timer_step():
             if is_greeted:
                 continue
             await bot.send_video(chat_id, success_vid, caption="<b>Поздравляю тебя с днём рождения!</b>🎉🎉🎉",
-                                 message_effect_id=5046509860389126442)
+                                 message_effect_id=5046509860389126442 if chat_data.type == "private" else None)
             birthday_dialog = [
                 {"role": "user",
                  "content": "У меня сегодня день рождения!"},
